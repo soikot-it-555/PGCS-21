@@ -28,6 +28,7 @@
     <input id="login-user" required autocomplete="username" class="w-full border rounded-lg p-2.5" placeholder="Username (যেমন PGCS-2105)" />
     <input id="login-pass" type="password" autocomplete="current-password" required class="w-full border rounded-lg p-2.5" placeholder="Password" />
     <p id="login-err" class="text-rose-600 text-sm hidden"></p>
+    <p id="db-status" class="text-center text-sm text-slate-500"></p>
     <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg">Login</button>
     <button type="button" id="install-app" class="hidden w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-lg">Install PGCS-21 App</button>
   </form>
@@ -156,8 +157,36 @@
 <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-5 py-3 rounded-lg shadow-lg hidden z-50"></div>
 
 <script src="data.js"></script>
-<script src="assets.js"></script>
-<script src="app.js"></script>
+<script src="db.js"></script>
+<script>
+  // Database থেকে ডেটা নামানোর পর assets.js ও app.js চালু হবে
+  document.getElementById("loginForm").addEventListener("submit", e => { if (!window.__appReady) e.preventDefault(); });
+  (async () => {
+    const st = document.getElementById("db-status");
+    try {
+      st.textContent = "অনলাইন Database থেকে ডেটা লোড হচ্ছে...";
+      await DB.init();
+      for (const src of ["assets.js", "app.js"]) {
+        await new Promise((ok, no) => {
+          const s = document.createElement("script");
+          s.src = src; s.async = false; s.onload = ok;
+          s.onerror = () => no(new Error(src + " লোড হয়নি"));
+          document.body.appendChild(s);
+        });
+      }
+      window.__appReady = true;
+      st.remove();
+    } catch (err) {
+      console.error(err);
+      st.className = "text-center text-sm text-rose-600";
+      st.textContent = "Database-এর সাথে যুক্ত হওয়া যায়নি: " + (err.message || err) + " ";
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "underline"; b.textContent = "আবার চেষ্টা করুন";
+      b.onclick = () => location.reload();
+      st.appendChild(b);
+    }
+  })();
+</script>
 <script>
   let installPrompt;
   const installButton = document.getElementById("install-app");

@@ -1,10 +1,11 @@
-const CACHE_NAME = "pgcs-portal-v2";
+const CACHE_NAME = "pgcs-portal-v3";
 const BASE_URL = new URL("./", self.location.href);
 const APP_FILES = [
   "",
   "index.html",
   "style.css",
   "data.js",
+  "db.js",
   "assets.js",
   "app.js",
   "manifest.json",
@@ -29,6 +30,7 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).hostname.endsWith(".supabase.co")) return; // Database ডেটা কখনো cache নয়
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(event.request);
