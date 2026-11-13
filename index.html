@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PGCS-21 Financial Management Portal</title>
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PGCS-21" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="Pictures/PGCS-21_Logo.png" />
+  <link rel="apple-touch-icon" href="Pictures/pgcs-app-192.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+
+<!-- LOGIN -->
+<div id="login-screen" class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+  <form id="loginForm" class="bg-white p-8 rounded-2xl shadow w-full max-w-sm space-y-4">
+    <img src="Pictures/PGCS-21_Logo.png" class="h-24 mx-auto" alt="PGCS-21" />
+    <h1 class="text-center font-bold text-slate-800">Pashchimanchal Gas Co-operative Society (PGCS)-21</h1>
+    <input id="login-user" required autocomplete="username" class="w-full border rounded-lg p-2.5" placeholder="Username (যেমন PGCS-2105)" />
+    <input id="login-pass" type="password" autocomplete="current-password" required class="w-full border rounded-lg p-2.5" placeholder="Password" />
+    <p id="login-err" class="text-rose-600 text-sm hidden"></p>
+    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg">Login</button>
+    <button type="button" id="install-app" class="hidden w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-lg">Install PGCS-21 App</button>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden flex min-h-screen flex-col md:flex-row">
+  <aside class="w-full md:w-60 bg-slate-900 text-white flex flex-col md:fixed md:h-full md:overflow-y-auto z-10">
+    <div class="p-3 md:p-5 border-b border-slate-800 text-center">
+      <img src="Pictures/PGCS-21_Logo.png" class="h-16 mx-auto bg-white rounded-full p-1" alt="" />
+      <h1 class="font-bold text-emerald-400 mt-2">PGCS-21 Portal</h1>
+      <p id="who" class="text-xs text-slate-400 mt-1"></p>
+    </div>
+    <nav class="flex-1 p-2 md:p-3 grid grid-cols-2 md:flex md:flex-col gap-1 text-sm">
+      <button onclick="showPage('dashboard')" id="nav-dashboard" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📊 Dashboard</button>
+      <button onclick="showPage('entry')" id="nav-entry" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">➕ Payment Entry</button>
+      <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">✅ <span id="nav-approvals-label">Approvals</span></button>
+      <button onclick="showPage('admin')" id="nav-admin" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">🛠 Admin (IT)</button>
+      <button onclick="showPage('reports')" id="nav-reports" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📄 Reports</button>
+    </nav>
+    <div class="p-3 md:p-4 border-t border-slate-800 text-xs text-slate-400 space-y-2">
+      <p>BASIC Bank PLC<br>A/C: 2914-010019169</p>
+      <button onclick="changePassword()" class="text-sky-400 hover:underline block">Password পরিবর্তন</button>
+      <button id="reset-btn" onclick="resetData()" class="text-rose-400 hover:underline block">Reset to Original Excel</button>
+      <button onclick="logout()" class="text-white bg-slate-700 rounded px-3 py-1.5 w-full">Logout</button>
+    </div>
+  </aside>
+
+  <main class="flex-1 md:ml-60 p-3 md:p-6 min-w-0">
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <img src="Pictures/Letter_Head.png" class="h-12 hidden xl:block" alt="" />
+      <div class="ml-auto flex items-center gap-2 text-sm">
+        <label>আর্থিক বছর:</label>
+        <select id="fy-select" onchange="refreshAll()" class="border rounded-lg px-3 py-2 bg-white"></select>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <section id="page-dashboard" class="page-section">
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5" id="stats"></div>
+      <div class="bg-white rounded-xl border p-4 mb-5">
+        <h4 class="font-semibold mb-2 text-sm">মাসওয়ারি জমা (Approved)</h4>
+        <div class="h-56"><canvas id="monthlyChart"></canvas></div>
+      </div>
+      <div class="flex flex-wrap gap-3 items-center mb-3">
+        <h3 class="font-bold text-lg">সদস্যদের জমা ও বকেয়া</h3>
+        <input id="search-member" oninput="renderMembers()" placeholder="নাম বা MID দিয়ে Search..." class="border rounded-lg px-4 py-2 text-sm ml-auto w-64" />
+        <select id="filter-status" onchange="renderMembers()" class="border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="ALL">সব সদস্য</option><option value="DUE">শুধু Due আছে</option>
+          <option value="DRAFT">শুধু Draft আছে</option><option value="FULL">Payment Full (Due নেই)</option></select>
+      </div>
+      <p class="text-xs text-slate-500 mb-2">প্রতি মাসের ২৫ তারিখ পার হলে পরিশোধ না হওয়া কিস্তি <span class="chip bg-rose-100 text-rose-700">Due</span> দেখাবে। Draft = Admin approve করেনি।</p>
+      <div class="bg-white rounded-xl border overflow-x-auto">
+        <table class="w-full text-xs text-left" id="matrix"></table>
+      </div>
+    </section>
+
+    <!-- Entry -->
+    <section id="page-entry" class="page-section hidden">
+      <h2 class="text-2xl font-bold mb-2">Payment Entry</h2>
+      <p class="text-sm text-slate-500 mb-4" id="entry-note"></p>
+      <p id="form-closed" class="hidden bg-amber-50 border border-amber-300 text-amber-800 p-4 rounded-lg max-w-2xl mb-3">Admin বর্তমানে Data Entry Form বন্ধ রেখেছেন।</p>
+      <form id="paymentForm" class="bg-white p-6 rounded-xl border max-w-2xl grid md:grid-cols-2 gap-4">
+        <div><label class="lbl">সদস্য</label><select id="entry-member" class="inp"></select></div>
+        <div><label class="lbl">কিস্তি / Installment</label><select id="entry-installment" class="inp" onchange="syncAmount()"></select></div>
+        <div><label class="lbl">Payment Method</label>
+          <select id="entry-method" class="inp"></select></div>
+        <div><label class="lbl">Payment Date</label><input type="date" id="entry-date" required class="inp" /></div>
+        <div><label class="lbl">Amount (BDT)</label><input type="number" id="entry-amount" min="1" required class="inp" /></div>
+        <div><label class="lbl">Bank Name</label><input id="entry-bank" value="BASIC Bank PLC" class="inp" /></div>
+        <div class="md:col-span-2"><label class="lbl">Account No</label><select id="entry-account" class="inp"></select></div>
+        <div class="md:col-span-2"><label class="lbl">Comment</label><input id="entry-comment" class="inp" /></div>
+        <button class="md:col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg">Submit (Draft হিসেবে জমা হবে)</button>
+      </form>
+    </section>
+
+    <!-- Approvals / My submissions -->
+    <section id="page-approvals" class="page-section hidden">
+      <h2 class="text-2xl font-bold mb-4" id="approvals-title">Approvals</h2>
+      <div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-sm text-left" id="approvals-table"></table></div>
+    </section>
+
+    <!-- Admin (IT) -->
+    <section id="page-admin" class="page-section hidden">
+      <h2 class="text-2xl font-bold mb-4">Admin (IT) Control Panel</h2>
+      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Data Entry Form নিয়ন্ত্রণ</h3><div id="admin-form"></div></div>
+      <div class="bg-white rounded-xl border p-5">
+        <div class="flex items-center mb-3"><h3 class="font-bold">সদস্য ও Login (Username = MID)</h3>
+          <button onclick="addMember()" class="ml-auto bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg">+ নতুন সদস্য</button></div>
+        <div class="overflow-x-auto"><table class="w-full text-xs text-left" id="admin-users"></table></div>
+      </div>
+    </section>
+
+    <!-- Reports -->
+    <section id="page-reports" class="page-section hidden">
+      <h2 class="text-2xl font-bold mb-4">Reports</h2>
+      <div class="grid md:grid-cols-2 gap-5">
+        <div class="bg-white p-6 rounded-xl border">
+          <h3 class="font-bold mb-2">বার্ষিক Summary</h3>
+          <div class="flex gap-3"><button onclick="exportSummaryPDF()" class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm">PDF</button>
+          <button onclick="exportFullExcel()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm">Excel</button></div>
+        </div>
+        <div class="bg-white p-6 rounded-xl border">
+          <h3 class="font-bold mb-2">কিস্তি অনুযায়ী Report</h3>
+          <div class="flex gap-3"><select id="report-month-select" class="border rounded-lg px-3 py-2 text-sm flex-1"></select>
+          <button onclick="exportMonthlyPDF()" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">PDF</button></div>
+        </div>
+        <div class="bg-white p-6 rounded-xl border md:col-span-2">
+          <h3 class="font-bold mb-2">Individual Report</h3>
+          <div class="flex gap-3"><select id="report-member-select" class="border rounded-lg px-3 py-2 text-sm flex-1"></select>
+          <button onclick="exportIndividualPDF($('report-member-select').value)" class="bg-sky-700 text-white px-4 py-2 rounded-lg text-sm">PDF</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal -->
+<div id="individual-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex justify-between border-b pb-3 mb-3"><h3 id="modal-title" class="text-lg font-bold"></h3><button id="modal-pdf" class="text-sm bg-sky-700 text-white px-3 rounded mx-3">PDF</button>
+      <button onclick="closeModal()" class="text-xl font-bold">&times;</button></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+<div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-5 py-3 rounded-lg shadow-lg hidden z-50"></div>
+
+<script src="data.js"></script>
+<script src="assets.js"></script>
+<script src="app.js"></script>
+<script>
+  let installPrompt;
+  const installButton = document.getElementById("install-app");
+  window.addEventListener("beforeinstallprompt", event => {
+    event.preventDefault();
+    installPrompt = event;
+    installButton.classList.remove("hidden");
+  });
+  installButton.addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    installButton.classList.add("hidden");
+  });
+  window.addEventListener("appinstalled", () => installButton.classList.add("hidden"));
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(error => console.error("Service worker registration failed:", error)));
+  }
+</script>
+</body>
+</html>
