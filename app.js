@@ -70,6 +70,53 @@ function resetData() {
   payments = INITIAL_PAYMENTS.map(p => ({ ...p })); save(); refreshAll(); toast("Reset সম্পন্ন");
 }
 
+// ---------- Database Backup / Restore (Admin IT only) ----------
+const BACKUP_KEYS = [MKEY, SKEY, KEY, PWKEY];
+function downloadDatabaseBackup() {
+  if (!isAdmin()) return toast("শুধু Admin (IT) Backup নিতে পারবেন");
+  const data = {};
+  BACKUP_KEYS.forEach(key => { data[key] = localStorage.getItem(key); });
+  const backup = {
+    app: "PGCS-21",
+    backupVersion: 1,
+    createdAt: new Date().toISOString(),
+    data
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `PGCS-21_Database_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Database Backup Download হয়েছে");
+}
+async function restoreDatabaseBackup(file) {
+  if (!isAdmin()) return toast("শুধু Admin (IT) Restore করতে পারবেন");
+  if (!file) return;
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup?.app !== "PGCS-21" || backup?.backupVersion !== 1 || !backup.data || typeof backup.data !== "object") {
+      throw new Error("এটি PGCS-21-এর সঠিক Backup file নয়");
+    }
+    const parsed = {};
+    for (const key of BACKUP_KEYS) {
+      if (!(key in backup.data) || typeof backup.data[key] !== "string") throw new Error("Backup file-এ প্রয়োজনীয় data নেই: " + key);
+      parsed[key] = JSON.parse(backup.data[key]);
+    }
+    if (!Array.isArray(parsed[MKEY]) || !parsed[SKEY] || typeof parsed[SKEY] !== "object" || Array.isArray(parsed[SKEY]) ||
+        !Array.isArray(parsed[KEY]) || !parsed[PWKEY] || typeof parsed[PWKEY] !== "object" || Array.isArray(parsed[PWKEY])) {
+      throw new Error("Backup file-এর data format সঠিক নয়");
+    }
+    if (!confirm("বর্তমান Database-এর সব data Backup file-এর data দিয়ে প্রতিস্থাপিত হবে। Restore করার আগে বর্তমান data-এর Backup নিয়ে রাখুন। আপনি কি নিশ্চিত?")) return;
+    BACKUP_KEYS.forEach(key => localStorage.setItem(key, backup.data[key]));
+    alert("Database Restore সম্পন্ন হয়েছে। App পুনরায় চালু হবে।");
+    location.reload();
+  } catch (err) {
+    alert("Restore করা যায়নি: " + (err?.message || "অজানা সমস্যা"));
+  }
+}
+
 // ---------- Calculations ----------
 const today = new Date(); today.setHours(0, 0, 0, 0);
 const isPastDue = i => new Date(i.due + "T23:59:59") < new Date();
@@ -316,7 +363,11 @@ function showPage(id) {
 function renderAdmin() {
   if (!isAdmin()) return;
   const k = i => fy() + "|" + i.key;
-  $("admin-form").innerHTML = `<label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> সদস্যদের জন্য Form চালু</label>
+  $("admin-form").innerHTML = `<div class="border rounded-xl p-3 mb-4 bg-slate-50"><p class="font-semibold mb-2">Database Backup & Restore</p>
+    <div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
+    <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
+    <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p></div>
+    <label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> সদস্যদের জন্য Form চালু</label>
     <div class="grid md:grid-cols-2 gap-3 my-3"><div><label class="lbl">Payment Method (কমা দিয়ে আলাদা)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
     <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>
     <p class="text-sm font-semibold mb-1">${fy()} — কিস্তি (Entry খোলা / টাকার পরিমাণ)</p>
