@@ -37,8 +37,8 @@ const isAdmin = () => currentRole() === "adminIT";
 const isApprover = () => isAdmin() || currentRole() === "admin";
 const canAccessPage = page => ({
   adminIT: ["dashboard", "entry", "approvals", "admin", "reports"],
-  admin: ["approvals", "reports"],
-  member: ["entry", "reports"]
+  admin: ["dashboard", "entry", "approvals", "reports"],
+  member: ["dashboard", "entry", "reports"]
 }[currentRole()] || []).includes(page);
 const fmt = n => "৳ " + Number(n).toLocaleString("en-IN");
 const member = mid => MEMBERS.find(m => m.mid === mid);
