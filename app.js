@@ -210,13 +210,25 @@ function renderEntryOptions() {
 function renderInstallmentCheckboxes() {
   const container = $("installment-checkboxes");
   if (!container) return;
+
+  const mid = isAdmin() ? $("entry-member").value : session.mid;
   const availableInsts = insts().filter(i => isAdmin() || !S.closed.includes(fy() + "|" + i.key));
-  container.innerHTML = availableInsts.map(i =>
-    `<label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded">
-      <input type="checkbox" class="installment-checkbox" value="${i.key}" data-amount="${i.amount}" onchange="syncAmount()">
-      <span>${i.key} (৳${i.amount})</span>
-    </label>`
-  ).join("");
+
+  container.innerHTML = availableInsts.map(i => {
+    const paid = paidOf(mid, i.key);
+    const isPaid = paid >= i.amount;
+    const hasDraft = paidOf(mid, i.key, "Draft") > 0;
+
+    return `<label class="flex items-center gap-2 text-sm ${isPaid ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-white'} p-2 rounded">
+      <input type="checkbox"
+        class="installment-checkbox"
+        value="${i.key}"
+        data-amount="${i.amount}"
+        ${isPaid ? 'checked disabled' : ''}
+        onchange="syncAmount()">
+      <span>${i.key} (৳${i.amount})${isPaid ? ' ✓' : hasDraft ? ' ⏳' : ''}</span>
+    </label>`;
+  }).join("");
 }
 function accountNumbers() {
   return [...new Set([...DEFAULT_ACCOUNTS, ...S.accounts, ...MEMBERS.map(m => m.accountNo).filter(Boolean)])];
@@ -243,6 +255,9 @@ function fillAccount() {
     if (m.accountNo && !accountNumbers().includes(m.accountNo)) renderAccountOptions(m.accountNo);
     $("entry-account").value = m.accountNo || "";
   }
+  // Member পরিবর্তন হলে installment checkboxes আবার render করতে হবে
+  renderInstallmentCheckboxes();
+  syncAmount();
 }
 function handleAccountChange() {
   const select = $("entry-account");
