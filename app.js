@@ -140,27 +140,43 @@ function cell(m, i) {
 function renderStats() {
   const ap = payments.filter(p => p.fy === fy() && p.status === "Approved");
   const dr = payments.filter(p => p.fy === fy() && p.status === "Draft");
-  let overdue = 0, cur = 0;
-  MEMBERS.forEach(m => insts().forEach(i => { const c = cell(m, i); overdue += c.due; if (sameMonth(i) && m.status === "Active") cur += c.left; }));
+  let overdue = 0, currentMonth = 0;
+
+  // শুধু admin-এ unchecked নয় এমন installments দেখাবো
+  const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
+
+  MEMBERS.forEach(m => {
+    visibleInsts.forEach(i => {
+      const c = cell(m, i);
+      overdue += c.due;
+      if (sameMonth(i) && m.status === "Active") currentMonth += c.left;
+    });
+  });
+
   const card = (t, v, c) => `<div class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">${t}</p><h3 class="text-xl font-bold mt-1 ${c}">${v}</h3></div>`;
   $("stats").innerHTML = card("মোট জমা (Approved)", fmt(ap.reduce((s, p) => s + p.amount, 0)), "text-emerald-600")
     + card("মোট বকেয়া (Due)", fmt(overdue), "text-rose-600")
-    + card("চলতি মাসের বাকি", fmt(cur), "text-amber-600")
+    + card("চলতি মাসে পরিশোধযোগ্য", fmt(currentMonth), "text-amber-600")
     + card("Draft (অপেক্ষমাণ)", `${dr.length} টি / ${fmt(dr.reduce((s, p) => s + p.amount, 0))}`, "text-amber-600")
     + card("সক্রিয় সদস্য", `${MEMBERS.filter(m => m.status === "Active").length} / ${MEMBERS.length}`, "text-slate-800");
-  const totals = insts().map(i => payments.filter(p => p.fy === fy() && p.inst === i.key && p.status === "Approved").reduce((s, p) => s + p.amount, 0));
+
+  const totals = visibleInsts.map(i => payments.filter(p => p.fy === fy() && p.inst === i.key && p.status === "Approved").reduce((s, p) => s + p.amount, 0));
   if (chart) chart.destroy();
-  chart = new Chart($("monthlyChart"), { type: "bar", data: { labels: insts().map(i => i.key), datasets: [{ label: "BDT", data: totals, backgroundColor: "#10b981", borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+  chart = new Chart($("monthlyChart"), { type: "bar", data: { labels: visibleInsts.map(i => i.key), datasets: [{ label: "BDT", data: totals, backgroundColor: "#10b981", borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
 }
 
 function renderMembers() {
   const q = $("search-member").value.toLowerCase();
   const list = MEMBERS.filter(m => m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q));
-  let head = `<thead><tr><th>MID</th><th>নাম</th><th>মোট জমা</th><th>চলতি মাস বাকি</th><th>মোট Due</th>${insts().map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
+
+  // শুধু admin-এ unchecked নয় এমন installments দেখাবো
+  const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
+
+  let head = `<thead><tr><th>MID</th><th>নাম</th><th>মোট জমা</th><th>চলতি মাস পরিশোধযোগ্য</th><th>মোট Due</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
   const f = $("filter-status").value;
   const body = list.map(m => {
     let total = 0, due = 0, cur = 0, dr = 0;
-    const cells = insts().map(i => { const c = cell(m, i); total += c.paid; due += c.due; dr += c.draft; if (sameMonth(i) && m.status === "Active") cur += c.left; return `<td>${c.html}</td>`; }).join("");
+    const cells = visibleInsts.map(i => { const c = cell(m, i); total += c.paid; due += c.due; dr += c.draft; if (sameMonth(i) && m.status === "Active") cur += c.left; return `<td>${c.html}</td>`; }).join("");
     if ((f === "DUE" && !due) || (f === "DRAFT" && !dr) || (f === "FULL" && (due || !total))) return "";
     return `<tr><td class="font-mono font-semibold">${m.mid}</td><td>${m.name}${m.status === "Withdrawn" ? ' <span class="chip bg-slate-200 text-slate-600">Withdrawn</span>' : ""}</td>
       <td class="font-bold">${fmt(total)}</td><td class="${cur ? "text-amber-600" : ""}">${fmt(cur)}</td>
