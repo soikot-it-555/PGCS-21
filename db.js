@@ -7,8 +7,8 @@
   "use strict";
 
   // ▼▼▼ শুধু এই দুটি লাইন বদলান (Supabase → Project Settings → API Keys) ▼▼▼
-  const SUPABASE_URL = "https://lknftxkklpztbcovprma.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_6MByUD2x5QZxOjrI34fqRw_npSJXcl7";
+  const SUPABASE_URL = "https://lknftxkkplztbcovprma.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxrbmZ0eGtrcGx6dGJjb3Zwcm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NzYxNDEsImV4cCI6MjExMDE1MjE0MX0.QAkBjY1k3ObKXdIryhuA-1a3M5-VpmEdQ7vEhlsBakc";
   // ▲▲▲ service_role / secret key কখনো এখানে বসাবেন না ▲▲▲
 
   const MEMBERS_KEY = "pgcs_members_v1";
@@ -30,15 +30,30 @@
 
   // ---------- REST helper ----------
   async function api(path, { method = "GET", body, headers = {} } = {}) {
-    const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
-      method,
-      cache: "no-store",
-      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json", ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
-    if (!res.ok) throw new Error("Supabase " + res.status + ": " + (await res.text()).slice(0, 200));
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+    try {
+      const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+        method,
+        cache: "no-store",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
+          "Content-Type": "application/json",
+          ...headers
+        },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error("Supabase " + res.status + ": " + errText.slice(0, 200));
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch (e) {
+      if (e.message.includes("Failed to fetch")) {
+        throw new Error("Network error: ইন্টারনেট সংযোগ চেক করুন অথবা Supabase URL/Key সঠিক আছে কিনা যাচাই করুন");
+      }
+      throw e;
+    }
   }
   const upsertState = (key, value) =>
     api("app_state?on_conflict=key", {
@@ -118,10 +133,45 @@
     if (this === ls && ready && (k === PAY_KEY || STATE_KEYS.includes(k))) enqueue(k, String(v));
   };
 
+  // ---------- Retry helper ----------
+  async function withRetry(fn, retries = 3, delayMs = 2000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (i === retries - 1) throw e;
+        console.warn("Database: retry " + (i + 1) + "/" + retries + " after error:", e.message);
+        await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+
   // ---------- Startup ----------
   async function init() {
     if (!configured) throw new Error("db.js ফাইলে Supabase URL ও Key বসানো হয়নি");
-    const [state, pays] = await Promise.all([api("app_state?select=key,value"), fetchAllPayments()]);
+
+    // প্রথমে Supabase URL/Key সঠিক কিনা দ্রুত চেক
+    try {
+      const testRes = await fetch(SUPABASE_URL + "/rest/v1/", {
+        method: "HEAD",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY
+        }
+      });
+      if (testRes.status === 401 || testRes.status === 403) {
+        throw new Error("Supabase API Key ভুল বা মেয়াদোত্তীর্ণ। Supabase Dashboard → Project Settings → API থেকে সঠিক anon/public key কপি করুন।");
+      }
+    } catch (e) {
+      if (e.message.includes("Failed to fetch") || e.name === "TypeError") {
+        throw new Error("Supabase URL-এ সংযোগ হচ্ছে না। ইন্টারনেট সংযোগ চেক করুন, এবং Supabase URL ('" + SUPABASE_URL + "') সঠিক কিনা যাচাই করুন।");
+      }
+      throw e;
+    }
+
+    const [state, pays] = await withRetry(() =>
+      Promise.all([api("app_state?select=key,value"), fetchAllPayments()])
+    );
     const sm = new Map(state.map(r => [r.key, r.value]));
 
     if (!sm.has("_initialized")) {
