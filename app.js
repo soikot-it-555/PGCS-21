@@ -450,7 +450,7 @@ function downloadMembersDirectoryPDF() {
   if (!isApprover()) return toast("শুধু Admin / Admin (IT) download করতে পারবেন");
   const { jsPDF } = window.jspdf, doc = new jsPDF({ orientation: "landscape" });
   const y = pdfHead(doc, "PGCS-21 — Members' Directory (" + new Date().toLocaleDateString("en-GB") + ")");
-  doc.autoTable({ ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7, cellPadding: 1.5 }, head: [DIR_HEAD], body: directoryRows(),
+  safeTable(doc, { ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7, cellPadding: 1.5 }, head: [DIR_HEAD], body: directoryRows(),
     columnStyles: { 2: { halign: "left" }, 6: { halign: "left", cellWidth: 38 }, 7: { halign: "left", cellWidth: 38 } } });
   doc.save("PGCS-21_Members_Directory.pdf");
   toast("Members' Directory PDF downloaded");
@@ -659,8 +659,24 @@ function pdfHead(doc, title) {
 }
 const tblStyle = { theme: "grid", styles: { fontSize: 8.5, halign: "center", valign: "middle", lineColor: [0, 0, 0], lineWidth: 0.2, textColor: 0 },
   headStyles: { fillColor: [22, 96, 130], textColor: 255 }, bodyStyles: { fillColor: [255, 255, 255] }, alternateRowStyles: { fillColor: [190, 230, 247] } };
+// টেবিল ২য় পাতায় গেলে অন্তত MIN_ROWS টি row একসাথে নতুন পাতায় যাবে (একা ১-২ row বা একা সই-ঘর পড়ে থাকবে না)
+const MIN_ROWS = 4;
+function safeTable(doc, opts) {
+  const body = opts.body || [], W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const portrait = H > W;
+  const dry = new jsPDF({ orientation: portrait ? "portrait" : "landscape" }), pageOf = [];
+  dry.autoTable({ ...opts, didDrawCell: d => { if (d.section === "body") pageOf[d.row.index] = dry.internal.getCurrentPageInfo().pageNumber; } });
+  const pages = dry.internal.getNumberOfPages(), last = pageOf.filter(p => p === pages).length;
+  const signNoFit = portrait && dry.lastAutoTable.finalY + 62 > H - 7;   // সই-ঘর (signBlock) জায়গা না পেলে
+  const needCut = body.length > MIN_ROWS && ((pages > 1 && last < MIN_ROWS) || signNoFit);
+  if (!needCut) return doc.autoTable(opts);
+  const cut = body.length - MIN_ROWS;
+  doc.autoTable({ ...opts, body: body.slice(0, cut) });
+  doc.addPage();
+  doc.autoTable({ ...opts, body: body.slice(cut), startY: 15 });
+}
 function signBlock(doc) {
-  let y = doc.lastAutoTable.finalY + 22; if (y > 255) { doc.addPage(); y = 30; }
+  let y = doc.lastAutoTable.finalY + 22; if (y + 38 > doc.internal.pageSize.getHeight() - 7) { doc.addPage(); y = 30; }
   const W = doc.internal.pageSize.getWidth(); doc.setFontSize(9);
   doc.setFont("helvetica", "bold"); doc.text("Prepared and Checked By", 30, y); doc.text("Checked and Approved By", W - 75, y);
   doc.setFont("helvetica", "normal");
@@ -676,7 +692,7 @@ function dueText(m) {
 function exportSummaryPDF() {
   const doc = new jsPDF(), y = pdfHead(doc, `The Amount of Payments in the ${fy()} Financial Year`);
   const rows = dueMatrix().filter(x => x.m.status === "Active" || x.paid > 0);
-  doc.autoTable({ ...tblStyle, startY: y, head: [["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"]],
+  safeTable(doc, { ...tblStyle, startY: y, head: [["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"]],
     body: [...rows.map(x => [String(x.m.sl).padStart(2, "0"), x.m.mid, x.m.name, x.paid + "/-", dueText(x.m) + (x.m.status === "Withdrawn" ? " Withdraw Membership" : "")]),
       [{ content: "Total", colSpan: 3, styles: { halign: "right", fontStyle: "bold" } }, { content: rows.reduce((s, x) => s + x.paid, 0) + "/-", styles: { fontStyle: "bold" } }, ""]],
     columnStyles: { 2: { halign: "left" }, 4: { cellWidth: 60 } } });
@@ -688,13 +704,13 @@ function exportIndividualPDF(mid) {
   let paid = 0, due = 0;
   const body = insts().map(i => { const c = cell(m, i), ps = payments.filter(p => p.fy === fy() && p.mid === mid && p.inst === i.key); paid += c.paid; due += c.due;
     return [instLabel(i), i.due, i.amount, c.paid, c.due, (c.paid >= i.amount ? "Paid" : c.due ? "Due" : "Upcoming") + (c.draft ? ` (Draft ${c.draft})` : ""), ps.map(p => `${p.date} ${p.method}${p.status !== "Approved" ? " [" + p.status + "]" : ""}`).join("; ") || "-"]; });
-  doc.autoTable({ ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7.5 }, head: [["Installment", "Due Date", "Amount", "Paid", "Due", "Status", "Payment Details"]],
+  safeTable(doc, { ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7.5 }, head: [["Installment", "Due Date", "Amount", "Paid", "Due", "Status", "Payment Details"]],
     body: [...body, [{ content: "Total", colSpan: 3, styles: { halign: "right", fontStyle: "bold" } }, paid, due, "", ""]] });
   signBlock(doc); doc.save(`PGCS_${fy()}_${mid}_Statement.pdf`);
 }
 function exportMonthlyPDF() {
   const k = $("report-month-select").value, i = insts().find(x => x.key === k), doc = new jsPDF(), y = pdfHead(doc, `${instLabel(i)} Installment Report`);
-  doc.autoTable({ ...tblStyle, startY: y, head: [["SL NO.", "MID", "Name", "Method", "Date", "Paid", "Due"]],
+  safeTable(doc, { ...tblStyle, startY: y, head: [["SL NO.", "MID", "Name", "Method", "Date", "Paid", "Due"]],
     body: MEMBERS.filter(m => m.status === "Active" || cell(m, i).paid).map(m => { const ps = payments.filter(p => p.fy === fy() && p.mid === m.mid && p.inst === k && p.status === "Approved"), c = cell(m, i);
       return [String(m.sl).padStart(2, "0"), m.mid, m.name, ps.map(p => p.method).join(", ") || "-", ps.map(p => p.date).join(", ") || "-", c.paid + "/-", c.due ? c.due + "/-" : "-"]; }),
     columnStyles: { 2: { halign: "left" } } });
@@ -783,7 +799,7 @@ function exportDashboardTablePDF() {
     ""
   ]);
 
-  doc.autoTable({
+  safeTable(doc, {
     ...tblStyle,
     startY: y,
     head: [headers],
