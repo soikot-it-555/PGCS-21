@@ -28,7 +28,7 @@ let pw = JSON.parse(localStorage.getItem(PWKEY)) || {};
 let session = JSON.parse(sessionStorage.getItem("pgcs_session") || "null");
 let chart = null, lastSelectedAccount = "", personalEditMode = false;
 const save = () => localStorage.setItem(KEY, JSON.stringify(payments));
-const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(String(id).replace(/^#/, ""));
 const fy = () => $("fy-select").value;
 const insts = () => YEARS[fy()];
 const accessRole = m => Object.hasOwn(ACCESS_ROLES, m?.accessRole) ? m.accessRole : m?.mid.toUpperCase() === DEFAULT_IT_MID ? "adminIT" : "member";
@@ -259,7 +259,8 @@ function renderMemberDetail() {
         </div>
         <div>
           <p class="text-sm text-slate-500">Mobile Number</p>
-          <p class="font-semibold font-mono">${m.mobile || "—"}</p>
+          <div class="flex gap-2 mt-1"><input type="tel" id="pi-mobile-quick" class="border rounded p-2 w-full text-sm font-mono" placeholder="01XXXXXXXXX" value="${m.mobile || ""}">
+            <button onclick="saveMobile()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 rounded-lg">Save</button></div>
         </div>
         ${personalEditMode ? `
         <div>
@@ -273,10 +274,6 @@ function renderMemberDetail() {
         <div>
           <p class="text-xs text-slate-500">Nominee NID</p>
           <input type="text" id="pi-nid" class="border rounded p-2 w-full text-sm font-mono" value="${m.nomineeNID || ""}">
-        </div>
-        <div>
-          <p class="text-xs text-slate-500">Mobile Number</p>
-          <input type="text" id="pi-mobile" class="border rounded p-2 w-full text-sm" value="${m.mobile || ""}">
         </div>
         <div>
           <p class="text-xs text-slate-500">Present Address</p>
@@ -385,7 +382,8 @@ function renderMemberDetail() {
       </div>
     </div>
 
-    <!-- Security Settings -->
+  `;
+  $("security-settings").innerHTML = `
     <div class="bg-white rounded-xl border p-6">
       <h3 class="text-xl font-bold text-slate-800 mb-4">Security Settings</h3>
       <div class="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
@@ -406,12 +404,19 @@ function renderMemberDetail() {
 // ---------- Personal Info Edit Helpers ----------
 function togglePersonalEdit() { personalEditMode = !personalEditMode; renderMemberDetail(); }
 function savePersonalInfo() {
-  const fields = ["nominee", "nomineeRelation", "nomineeNID", "mobile", "presentAddress", "permanentAddress"];
-  const ids = ["pi-nominee", "pi-relation", "pi-nid", "pi-mobile", "pi-present", "pi-permanent"];
+  const fields = ["nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"];
+  const ids = ["pi-nominee", "pi-relation", "pi-nid", "pi-present", "pi-permanent"];
   fields.forEach((f, i) => { updMember(session.mid, f, $(ids[i]).value.trim()); });
   personalEditMode = false;
   renderMemberDetail();
   toast("Personal information updated");
+}
+
+function normMobile(v) { let s = String(v).replace(/[\s-]/g, ""); if (s.startsWith("+88")) s = s.slice(3); else if (s.startsWith("88") && s.length === 13) s = s.slice(2); return s; }
+function saveMobile() {
+  const raw = $("pi-mobile-quick").value.trim(), v = raw ? normMobile(raw) : "";
+  if (v && !/^01\d{9}$/.test(v)) return toast("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)");
+  updMember(session.mid, "mobile", v); renderMemberDetail(); toast("Mobile number updated");
 }
 
 // ---------- Members' Directory ----------
@@ -437,23 +442,25 @@ function renderMemberDirectory() {
   $("member-count").textContent = list.length + " সদস্য";
 }
 
+function directoryRows() {
+  return MEMBERS.map(m => [m.sl, m.mid, m.name, m.nominee || "—", m.nomineeRelation || "—", m.nomineeNID || "—", m.presentAddress || "—", m.permanentAddress || "—", m.mobile || "—", m.accountNo || "—", m.role, m.status]);
+}
+const DIR_HEAD = ["SL", "MID", "Name", "Nominee", "Relationship", "Nominee NID", "Present Address", "Permanent Address", "Mobile", "Account No", "Role", "Status"];
 function downloadMembersDirectoryPDF() {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text("PGCS-21 — Members' Directory", 14, 16);
-  doc.setFontSize(11);
-  doc.text("Members Directory — " + new Date().toLocaleDateString("en-GB"), 14, 26);
-  const rows = MEMBERS.map(m => [m.sl, m.mid, m.name, m.nominee || "—", m.nomineeRelation || "—", m.nomineeNID || "—", m.presentAddress || "—", m.permanentAddress || "—", m.mobile || "—", m.accountNo || "—", m.role, m.status]);
-  doc.autoTable({
-    head: [["SL", "MID", "Name", "Nominee", "Relationship", "Nominee NID", "Present Address", "Permanent Address", "Mobile", "Account No", "Role", "Status"]],
-    body: rows,
-    startY: 36,
-    theme: "striped",
-    headStyles: { fillColor: [15, 118, 110] }
-  });
+  if (!isApprover()) return toast("শুধু Admin / Admin (IT) download করতে পারবেন");
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ orientation: "landscape" });
+  const y = pdfHead(doc, "PGCS-21 — Members' Directory (" + new Date().toLocaleDateString("en-GB") + ")");
+  doc.autoTable({ ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7, cellPadding: 1.5 }, head: [DIR_HEAD], body: directoryRows(),
+    columnStyles: { 2: { halign: "left" }, 6: { halign: "left", cellWidth: 38 }, 7: { halign: "left", cellWidth: 38 } } });
   doc.save("PGCS-21_Members_Directory.pdf");
   toast("Members' Directory PDF downloaded");
+}
+function exportMemberListExcel() {
+  if (!isApprover()) return toast("শুধু Admin / Admin (IT) download করতে পারবেন");
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([DIR_HEAD, ...directoryRows()]), "Members Directory");
+  XLSX.writeFile(wb, "PGCS-21_Members_Directory.xlsx");
+  toast("Members' Directory Excel downloaded");
 }
 
 // ---------- Entry ----------
@@ -809,49 +816,45 @@ function showPage(id) {
     const role = currentRole();
     const showDir = role === "adminIT" || role === "admin";
     $("member-directory-container").classList.toggle("hidden", !showDir);
+    $("dir-export-btns").classList.toggle("hidden", !showDir);
     if (showDir) renderMemberDirectory();
   }
 }
 function renderAdmin() {
   if (!isAdmin()) return;
   const k = i => fy() + "|" + i.key;
-  $("admin-form").innerHTML = `<div class="border rounded-xl p-3 mb-4 bg-slate-50"><p class="font-semibold mb-2">Database Backup & Restore</p>
-    <div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
-    <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
-    <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p></div>
-    <div class="border rounded-xl p-3 mb-4 bg-slate-50">
-      <p class="font-semibold mb-2">Add New Member</p>
-      <div class="grid md:grid-cols-2 gap-3">
-        <div><label class="lbl">MID (Username)</label><input class="inp" id="m-mid" value="" onchange="validateAddMember()"></div>
-        <div><label class="lbl">Name</label><input class="inp" id="m-name" value="" onchange="validateAddMember()"></div>
-        <div><label class="lbl">Membership Role</label><input class="inp" id="m-role" value="Member" onchange="validateAddMember()"></div>
-        <div><label class="lbl">Role Name</label>
-          <select class="border rounded p-1 w-full" id="m-roleName" onchange="validateAddMember()">${Object.entries(ACCESS_ROLES).map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select></div>
-        <div><label class="lbl">Status</label>
-          <select class="border rounded p-1 w-full" id="m-status" onchange="validateAddMember()"><option value="Active">Active</option><option value="Withdrawn">Withdrawn</option></select></div>
-        <div><label class="lbl">Password (6+ chars)</label><input type="password" class="inp" id="m-pw" placeholder="Leave blank for default" onchange="validateAddMember()"></div>
-        <div><label class="lbl">Mobile Number</label><input class="inp" id="m-mobile" value="" onchange="validateAddMember()"></div>
-        <div><label class="lbl">Login</label><input type="checkbox" id="m-login" checked onchange="validateAddMember()"></div>
-      </div>
-      <button onclick="doAddMember()" class="bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg mt-2">+ Add Member</button>
-    </div>
-    <label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
-    <div class="grid md:grid-cols-2 gap-3 my-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
-    <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>
-    <div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — Installment Management</p>
-    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ Add New Installment</button></div>
+  $("admin-entry").innerHTML = `<label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
+    <div class="grid md:grid-cols-2 gap-3 mt-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
+    <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>`;
+  $("admin-inst").innerHTML = `<div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — Installment Management</p>
+    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ New Installment Entry</button></div>
     <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th class="p-2 text-left">Installment Name</th><th class="text-left">Due Date</th><th class="text-left">Amount (TK)</th><th class="text-center">Show in Entry Form</th><th></th></tr></thead>
     <tbody>${insts().map(i => `<tr class="border-b"><td class="p-2"><input type="text" class="border rounded px-2 py-1 w-full" value="${i.key}" onchange="editInstName('${i.key}',this.value)"></td>
       <td><input type="date" class="border rounded px-2 py-1" value="${i.due}" onchange="editInstDue('${i.key}',this.value)"></td>
       <td><input type="number" class="border rounded px-2 py-1 w-28" value="${i.amount}" onchange="setAmt('${k(i)}',this.value)"></td>
       <td class="text-center"><input type="checkbox" ${S.closed.includes(k(i)) ? "" : "checked"} onchange="toggleInst('${k(i)}',this.checked)"></td>
       <td><button onclick="deleteInstallment('${i.key}')" class="text-rose-600 hover:underline">Delete</button></td></tr>`).join("")}</tbody></table></div>`;
-  const inp = (mid, f, v, w = "w-32") => `<input class="border rounded p-1 ${w}" value="${v}" onchange="updMember('${mid}','${f}',this.value)">`;
-  $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>Name</th><th>Account No</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th>Mobile</th><th></th></tr>` +
-    MEMBERS.map(m => `<tr class="border-b"><td class="p-2 font-mono">${m.mid}</td><td>${inp(m.mid, "name", m.name, "w-44")}</td><td>${inp(m.mid, "accountNo", m.accountNo)}</td><td>${inp(m.mid, "role", m.role, "w-40")}</td>
+  $("admin-backup").innerHTML = `<div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
+    <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
+    <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p>`;
+  const ad = { mid: $("m-mid")?.value || "", name: $("m-name")?.value || "" };
+  $("admin-add").innerHTML = `<div class="border rounded-xl p-3 bg-slate-50"><p class="font-semibold mb-2 text-sm">Add New Member</p>
+    <div class="grid md:grid-cols-2 gap-3">
+      <div><label class="lbl">MID (Username)</label><input class="inp" id="m-mid" value="${ad.mid}"></div>
+      <div><label class="lbl">Name</label><input class="inp" id="m-name" value="${ad.name}"></div>
+      <div><label class="lbl">Membership Role</label><input class="inp" id="m-role" value="Member"></div>
+      <div><label class="lbl">Role Name</label><select class="inp" id="m-roleName">${Object.entries(ACCESS_ROLES).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>
+      <div><label class="lbl">Status</label><select class="inp" id="m-status"><option value="Active">Active</option><option value="Withdrawn">Withdrawn</option></select></div>
+      <div><label class="lbl">Password (6+ chars, ফাঁকা = default)</label><input class="inp" id="m-pw"></div>
+      <div><label class="lbl">Mobile Number</label><input class="inp" id="m-mobile"></div>
+      <div><label class="lbl">Login</label><input type="checkbox" id="m-login" checked> চালু</div>
+    </div><button onclick="addMember()" class="bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg mt-3">+ Add Member</button></div>`;
+  const inp = (mid, f, v, w = "w-32") => `<input class="border rounded p-1 ${w}" value="${v || ""}" onchange="updMember('${mid}','${f}',this.value)">`;
+  $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>Name</th><th>Account No</th><th>Mobile</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th></th></tr>` +
+    MEMBERS.map(m => `<tr class="border-b"><td class="p-2 font-mono">${m.mid}</td><td>${inp(m.mid, "name", m.name, "w-44")}</td><td>${inp(m.mid, "accountNo", m.accountNo)}</td><td>${inp(m.mid, "mobile", m.mobile)}</td><td>${inp(m.mid, "role", m.role, "w-40")}</td>
       <td><select class="border rounded p-1" onchange="setAccessRole('${m.mid}',this.value)">${Object.entries(ACCESS_ROLES).map(([value, label]) => `<option value="${value}" ${accessRole(m) === value ? "selected" : ""}>${label}</option>`).join("")}</select></td>
       <td><select class="border rounded p-1" onchange="updMember('${m.mid}','status',this.value)"><option ${m.status === "Active" ? "selected" : ""}>Active</option><option ${m.status === "Withdrawn" ? "selected" : ""}>Withdrawn</option></select></td>
-      <td>${pw[m.mid] ? "Custom" : "Default"} <button class="text-blue-600 underline" onclick="setPw('${m.mid}')">Set</button> <button class="text-slate-500 underline" onclick="resetPw('${m.mid}')">Reset</button></td>
+      <td><input type="text" class="border rounded p-1 w-32 font-mono" value="${(pw[m.mid] || DEFAULT_MEMBER_PASS).replace(/"/g, "&quot;")}" onchange="editPw('${m.mid}',this.value)"></td>
       <td><label><input type="checkbox" ${m.loginOff ? "" : "checked"} onchange="updMember('${m.mid}','loginOff',!this.checked)"> Login</label></td>
       <td><button class="text-rose-600" onclick="delMember('${m.mid}')">Delete</button></td></tr>`).join("");
 }
@@ -950,8 +953,13 @@ function setAccessRole(mid, role) {
     refreshAll();
   }
 }
-function setPw(mid) { if (!isAdmin()) return; const p = prompt(`${mid} - New password (6+ chars):`); if (p && p.length >= 6) { pw[mid] = p; localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast("Password সেট হয়েছে"); } }
-function resetPw(mid) { if (!isAdmin()) return; delete pw[mid]; localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast("Default password (" + DEFAULT_MEMBER_PASS + ")"); }
+function editPw(mid, v) {
+  if (!isAdmin()) return;
+  v = v.trim();
+  if (v.length < 6) { renderAdmin(); return toast("Password কমপক্ষে ৬ অক্ষরের হতে হবে"); }
+  if (v === DEFAULT_MEMBER_PASS) delete pw[mid]; else pw[mid] = v;
+  localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast(mid + " — password আপডেট হয়েছে");
+}
 function doAddMember() {
   if (!isAdmin()) return;
   const mid = $("#m-mid").value.trim();
