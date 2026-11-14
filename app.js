@@ -36,9 +36,9 @@ const currentRole = () => session?.role;
 const isAdmin = () => currentRole() === "adminIT";
 const isApprover = () => isAdmin() || currentRole() === "admin";
 const canAccessPage = page => ({
-  adminIT: ["dashboard", "entry", "approvals", "admin", "reports"],
-  admin: ["dashboard", "entry", "approvals", "reports"],
-  member: ["dashboard", "entry", "reports"]
+  adminIT: ["dashboard", "entry", "approvals", "admin", "reports", "member-detail"],
+  admin: ["dashboard", "entry", "approvals", "reports", "member-detail"],
+  member: ["dashboard", "entry", "reports", "member-detail"]
 }[currentRole()] || []).includes(page);
 const fmt = n => "৳ " + Number(n).toLocaleString("en-IN");
 const member = mid => MEMBERS.find(m => m.mid === mid);
@@ -198,6 +198,154 @@ function viewIndividual(mid) {
 const closeModal = () => $("individual-modal").classList.add("hidden");
 const statusChip = s => `<span class="chip ${s === "Approved" ? "bg-emerald-100 text-emerald-700" : s === "Rejected" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}">${s}</span>`;
 
+// ---------- Members' Detail ----------
+function renderMemberDetail() {
+  const currentMid = session.mid;
+  const m = member(currentMid);
+
+  if (!m) {
+    $("member-detail-content").innerHTML = `<div class="bg-white p-6 rounded-xl border"><p class="text-center text-slate-500">সদস্য তথ্য পাওয়া যায়নি</p></div>`;
+    return;
+  }
+
+  // Calculate payment statistics
+  let totalPaid = 0, totalDue = 0;
+  const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
+  const paymentDetails = visibleInsts.map(i => {
+    const c = cell(m, i);
+    totalPaid += c.paid;
+    totalDue += c.due;
+    return { inst: i, cell: c };
+  });
+
+  const dueInstallments = paymentDetails.filter(p => p.cell.due > 0);
+
+  $("member-detail-content").innerHTML = `
+    <!-- Personal Information Card -->
+    <div class="bg-white rounded-xl border p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xl font-bold text-slate-800">Personal Information</h3>
+        <span class="chip ${m.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}">${m.status}</span>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <p class="text-sm text-slate-500">Name</p>
+          <p class="font-semibold">${m.name}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Member ID (MID)</p>
+          <p class="font-semibold font-mono">${m.mid}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Role</p>
+          <p class="font-semibold">${m.role}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Account Number</p>
+          <p class="font-semibold font-mono">${m.accountNo || "N/A"}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Bank</p>
+          <p class="font-semibold">${S.bank}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Serial Number</p>
+          <p class="font-semibold">${m.sl}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Summary Card -->
+    <div class="bg-white rounded-xl border p-6">
+      <h3 class="text-xl font-bold text-slate-800 mb-4">Payment Summary (${fy()})</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-emerald-50 p-4 rounded-lg">
+          <p class="text-xs text-emerald-700 mb-1">Total Paid</p>
+          <p class="text-2xl font-bold text-emerald-700">${fmt(totalPaid)}</p>
+        </div>
+        <div class="bg-rose-50 p-4 rounded-lg">
+          <p class="text-xs text-rose-700 mb-1">Total Due</p>
+          <p class="text-2xl font-bold text-rose-700">${fmt(totalDue)}</p>
+        </div>
+        <div class="bg-sky-50 p-4 rounded-lg">
+          <p class="text-xs text-sky-700 mb-1">Pending Approval</p>
+          <p class="text-2xl font-bold text-sky-700">${payments.filter(p => p.fy === fy() && p.mid === currentMid && p.status === "Draft").length}</p>
+        </div>
+        <div class="bg-amber-50 p-4 rounded-lg">
+          <p class="text-xs text-amber-700 mb-1">Due Installments</p>
+          <p class="text-2xl font-bold text-amber-700">${dueInstallments.length}</p>
+        </div>
+      </div>
+      ${dueInstallments.length > 0 ? `
+        <div class="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+          <p class="text-sm font-semibold text-amber-800 mb-2">⚠️ Due Payments:</p>
+          <p class="text-sm text-amber-700">${dueInstallments.map(p => `${instLabel(p.inst)}: ${fmt(p.cell.due)}`).join(", ")}</p>
+        </div>
+      ` : `
+        <div class="mt-4 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+          <p class="text-sm font-semibold text-emerald-700">✓ All payments up to date!</p>
+        </div>
+      `}
+    </div>
+
+    <!-- Payment History -->
+    <div class="bg-white rounded-xl border p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xl font-bold text-slate-800">Payment History</h3>
+        <button onclick="exportIndividualPDF('${currentMid}')" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-2 rounded-lg">📄 Download PDF</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100">
+            <tr>
+              <th class="p-3 text-left">Installment</th>
+              <th class="p-3 text-left">Due Date</th>
+              <th class="p-3 text-left">Amount</th>
+              <th class="p-3 text-left">Paid</th>
+              <th class="p-3 text-left">Due</th>
+              <th class="p-3 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${paymentDetails.map(p => `
+              <tr class="border-b hover:bg-slate-50">
+                <td class="p-3">${instLabel(p.inst)}</td>
+                <td class="p-3">${p.inst.due}</td>
+                <td class="p-3 font-semibold">${fmt(p.inst.amount)}</td>
+                <td class="p-3 ${p.cell.paid > 0 ? "text-emerald-700 font-semibold" : ""}">${fmt(p.cell.paid)}</td>
+                <td class="p-3 ${p.cell.due > 0 ? "text-rose-700 font-semibold" : ""}">${p.cell.due > 0 ? fmt(p.cell.due) : "-"}</td>
+                <td class="p-3">
+                  ${p.cell.paid >= p.inst.amount
+                    ? '<span class="chip bg-emerald-100 text-emerald-700">✓ Paid</span>'
+                    : p.cell.due > 0
+                      ? '<span class="chip bg-rose-100 text-rose-700">Due</span>'
+                      : '<span class="chip bg-slate-100 text-slate-600">Upcoming</span>'}
+                  ${p.cell.draft > 0 ? `<span class="chip bg-amber-100 text-amber-700 ml-1">Draft ${p.cell.draft}</span>` : ""}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Security Settings -->
+    <div class="bg-white rounded-xl border p-6">
+      <h3 class="text-xl font-bold text-slate-800 mb-4">Security Settings</h3>
+      <div class="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+        <div>
+          <p class="font-semibold">Password</p>
+          <p class="text-sm text-slate-500">Change your account password</p>
+        </div>
+        <button onclick="changePassword()" class="bg-slate-800 hover:bg-slate-900 text-white text-sm px-4 py-2 rounded-lg">Change Password</button>
+      </div>
+      <div class="mt-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <p class="text-sm text-blue-800">💡 <strong>Password Tips:</strong> Use at least 6 characters. Keep your password secure and don't share it with others.</p>
+      </div>
+    </div>
+  `;
+}
+
 // ---------- Entry ----------
 function renderEntryOptions() {
   const open = S.formOpen || isAdmin();
@@ -212,7 +360,8 @@ function renderInstallmentCheckboxes() {
   if (!container) return;
 
   const mid = isAdmin() ? $("entry-member").value : session.mid;
-  const availableInsts = insts().filter(i => isAdmin() || !S.closed.includes(fy() + "|" + i.key));
+  // শুধু Entry Form-এ চেক করা (unclosed) কিস্তিগুলো দেখাবো
+  const availableInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
   container.innerHTML = availableInsts.map(i => {
     const paid = paidOf(mid, i.key);
@@ -433,6 +582,108 @@ function exportMonthlyPDF() {
       return [String(m.sl).padStart(2, "0"), m.mid, m.name, ps.map(p => p.method).join(", ") || "-", ps.map(p => p.date).join(", ") || "-", c.paid + "/-", c.due ? c.due + "/-" : "-"]; }),
     columnStyles: { 2: { halign: "left" } } });
   signBlock(doc); doc.save(`PGCS_${k}_Report.pdf`);
+}
+function exportDashboardTablePDF() {
+  const doc = new jsPDF(), y = pdfHead(doc, `Member Payment Status - ${fy()} Financial Year`);
+
+  // Filter করা members (search এবং status filter অনুযায়ী)
+  const q = $("search-member").value.toLowerCase();
+  const filterStatus = $("filter-status").value;
+  const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
+
+  const filteredMembers = MEMBERS.filter(m => {
+    if (q && !(m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q))) return false;
+
+    let total = 0, due = 0, draft = 0;
+    visibleInsts.forEach(i => {
+      const c = cell(m, i);
+      total += c.paid;
+      due += c.due;
+      draft += c.draft;
+    });
+
+    if (filterStatus === "DUE" && !due) return false;
+    if (filterStatus === "DRAFT" && !draft) return false;
+    if (filterStatus === "FULL" && (due || !total)) return false;
+
+    return true;
+  });
+
+  // Table header
+  const headers = ["MID", "Name", "Total Paid", "Total Due", "Comments"];
+
+  // Table body
+  const body = filteredMembers.map(m => {
+    let totalPaid = 0, totalDue = 0;
+    const dueDetails = [];
+
+    visibleInsts.forEach(i => {
+      const c = cell(m, i);
+      totalPaid += c.paid;
+      totalDue += c.due;
+
+      // Due থাকলে comment-এ যোগ করা
+      if (c.due > 0) {
+        dueDetails.push(`${instLabel(i)}: ${c.due}/-`);
+      }
+    });
+
+    // Comment text তৈরি করা
+    let comment = "";
+    if (dueDetails.length > 0) {
+      comment = dueDetails.join(", ") + " Payment Due";
+    } else if (totalPaid > 0) {
+      comment = "All Payments Completed";
+    } else {
+      comment = "No Payments Yet";
+    }
+
+    if (m.status === "Withdrawn") {
+      comment += " | Withdraw Membership";
+    }
+
+    return [
+      m.mid,
+      m.name,
+      totalPaid + "/-",
+      totalDue + "/-",
+      comment
+    ];
+  });
+
+  // Add totals row
+  const totalPaid = filteredMembers.reduce((sum, m) => {
+    return sum + visibleInsts.reduce((s, i) => s + cell(m, i).paid, 0);
+  }, 0);
+  const totalDue = filteredMembers.reduce((sum, m) => {
+    return sum + visibleInsts.reduce((s, i) => s + cell(m, i).due, 0);
+  }, 0);
+
+  body.push([
+    { content: "Total", colSpan: 2, styles: { halign: "right", fontStyle: "bold" } },
+    { content: totalPaid + "/-", styles: { fontStyle: "bold" } },
+    { content: totalDue + "/-", styles: { fontStyle: "bold" } },
+    ""
+  ]);
+
+  doc.autoTable({
+    ...tblStyle,
+    startY: y,
+    head: [headers],
+    body: body,
+    styles: { ...tblStyle.styles, fontSize: 8 },
+    columnStyles: {
+      0: { cellWidth: 28, halign: "center" },
+      1: { cellWidth: 40, halign: "left" },
+      2: { cellWidth: 25, halign: "center" },
+      3: { cellWidth: 25, halign: "center" },
+      4: { cellWidth: 65, halign: "left" }
+    }
+  });
+
+  signBlock(doc);
+  doc.save(`PGCS_${fy()}_Dashboard_Table.pdf`);
+  toast("Dashboard Table PDF Download হয়েছে");
 }
 const { jsPDF } = window.jspdf;
 

@@ -45,6 +45,7 @@
     <nav class="flex-1 p-2 md:p-3 grid grid-cols-2 md:flex md:flex-col gap-1 text-sm">
       <button onclick="showPage('dashboard')" id="nav-dashboard" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📊 Dashboard</button>
       <button onclick="showPage('entry')" id="nav-entry" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">➕ Payment Entry</button>
+      <button onclick="showPage('member-detail')" id="nav-member-detail" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">👤 Members' Detail</button>
       <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">✅ <span id="nav-approvals-label">Approvals</span></button>
       <button onclick="showPage('admin')" id="nav-admin" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">🛠 Admin (IT)</button>
       <button onclick="showPage('reports')" id="nav-reports" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📄 Reports</button>
@@ -75,6 +76,7 @@
       </div>
       <div class="flex flex-wrap gap-3 items-center mb-3">
         <h3 class="font-bold text-lg">সদস্যদের জমা ও বকেয়া</h3>
+        <button onclick="exportDashboardTablePDF()" class="bg-rose-600 hover:bg-rose-700 text-white text-sm px-4 py-2 rounded-lg">📄 PDF Export</button>
         <input id="search-member" oninput="renderMembers()" placeholder="নাম বা MID দিয়ে Search..." class="border rounded-lg px-4 py-2 text-sm ml-auto w-64" />
         <select id="filter-status" onchange="renderMembers()" class="border rounded-lg px-3 py-2 text-sm bg-white">
           <option value="ALL">সব সদস্য</option><option value="DUE">শুধু Due আছে</option>
@@ -105,6 +107,12 @@
         <div class="md:col-span-2"><label class="lbl">Comment</label><input id="entry-comment" class="inp" /></div>
         <button class="md:col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg">Submit (Draft হিসেবে জমা হবে)</button>
       </form>
+    </section>
+
+    <!-- Members' Detail -->
+    <section id="page-member-detail" class="page-section hidden">
+      <h2 class="text-2xl font-bold mb-4">Members' Detail</h2>
+      <div id="member-detail-content" class="space-y-5"></div>
     </section>
 
     <!-- Approvals / My submissions -->
