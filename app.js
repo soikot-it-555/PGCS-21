@@ -281,7 +281,7 @@ function handleAccountChange() {
   renderAccountOptions(value);
 }
 function syncAmount() {
-  const checkboxes = document.querySelectorAll(".installment-checkbox:checked");
+  const checkboxes = document.querySelectorAll(".installment-checkbox:checked:not([disabled])");
   let totalAmount = 0;
   checkboxes.forEach(cb => {
     totalAmount += Number(cb.dataset.amount || 0);
@@ -289,7 +289,7 @@ function syncAmount() {
   $("entry-amount").value = totalAmount || "";
 }
 function getSelectedInstallments() {
-  const checkboxes = document.querySelectorAll(".installment-checkbox:checked");
+  const checkboxes = document.querySelectorAll(".installment-checkbox:checked:not([disabled])");
   return Array.from(checkboxes).map(cb => cb.value);
 }
 $("paymentForm").addEventListener("submit", e => {
@@ -454,9 +454,14 @@ function renderAdmin() {
     <label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> সদস্যদের জন্য Form চালু</label>
     <div class="grid md:grid-cols-2 gap-3 my-3"><div><label class="lbl">Payment Method (কমা দিয়ে আলাদা)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
     <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>
-    <p class="text-sm font-semibold mb-1">${fy()} — কিস্তি (Entry খোলা / টাকার পরিমাণ)</p>
-    <div class="flex flex-wrap gap-2">${insts().map(i => `<div class="border rounded-lg p-2 text-xs"><label><input type="checkbox" ${S.closed.includes(k(i)) ? "" : "checked"} onchange="toggleInst('${k(i)}',this.checked)"> ${i.key}</label><br>
-      <input type="number" class="border rounded w-24 p-1 mt-1" value="${i.amount}" onchange="setAmt('${k(i)}',this.value)"></div>`).join("")}</div>`;
+    <div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — কিস্তি Management</p>
+    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ নতুন কিস্তি যোগ করুন</button></div>
+    <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th class="p-2 text-left">কিস্তি নাম</th><th class="text-left">Due Date</th><th class="text-left">Amount (৳)</th><th class="text-center">Entry Form-এ দেখাবে</th><th></th></tr></thead>
+    <tbody>${insts().map(i => `<tr class="border-b"><td class="p-2"><input type="text" class="border rounded px-2 py-1 w-full" value="${i.key}" onchange="editInstName('${i.key}',this.value)"></td>
+      <td><input type="date" class="border rounded px-2 py-1" value="${i.due}" onchange="editInstDue('${i.key}',this.value)"></td>
+      <td><input type="number" class="border rounded px-2 py-1 w-28" value="${i.amount}" onchange="setAmt('${k(i)}',this.value)"></td>
+      <td class="text-center"><input type="checkbox" ${S.closed.includes(k(i)) ? "" : "checked"} onchange="toggleInst('${k(i)}',this.checked)"></td>
+      <td><button onclick="deleteInstallment('${i.key}')" class="text-rose-600 hover:underline">মুছুন</button></td></tr>`).join("")}</tbody></table></div>`;
   const inp = (mid, f, v, w = "w-32") => `<input class="border rounded p-1 ${w}" value="${v}" onchange="updMember('${mid}','${f}',this.value)">`;
   $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>নাম</th><th>Account No</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th></th></tr>` +
     MEMBERS.map(m => `<tr class="border-b"><td class="p-2 font-mono">${m.mid}</td><td>${inp(m.mid, "name", m.name, "w-44")}</td><td>${inp(m.mid, "accountNo", m.accountNo)}</td><td>${inp(m.mid, "role", m.role, "w-40")}</td>
@@ -467,8 +472,71 @@ function renderAdmin() {
       <td><button class="text-rose-600" onclick="delMember('${m.mid}')">Delete</button></td></tr>`).join("");
 }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
-function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); }
+function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); refreshAll(); }
 function setAmt(k, v) { if (!isAdmin()) return; S.amt[k] = Number(v); saveS(); applyAmounts(); refreshAll(); toast("Saved"); }
+function addInstallment() {
+  if (!isAdmin()) return;
+  const key = prompt("নতুন কিস্তির নাম দিন (যেমন: July, BPPF):");
+  if (!key || !key.trim()) return;
+  const trimmedKey = key.trim();
+  if (insts().find(i => i.key === trimmedKey)) return toast("এই নামের কিস্তি আগে থেকেই আছে");
+  const due = prompt("Due Date (YYYY-MM-DD ফরম্যাটে, যেমন: 2025-07-25):");
+  if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return toast("সঠিক তারিখ দিন (YYYY-MM-DD)");
+  const amount = prompt("Amount (টাকা):");
+  if (!amount || isNaN(amount) || Number(amount) <= 0) return toast("সঠিক টাকার পরিমাণ দিন");
+  YEARS[fy()].push({ key: trimmedKey, due, amount: Number(amount) });
+  S.amt[fy() + "|" + trimmedKey] = Number(amount);
+  saveS();
+  refreshAll();
+  toast("নতুন কিস্তি যোগ হয়েছে");
+}
+function editInstName(oldKey, newKey) {
+  if (!isAdmin() || !newKey || !newKey.trim()) return;
+  const trimmedKey = newKey.trim();
+  if (trimmedKey === oldKey) return;
+  if (insts().find(i => i.key === trimmedKey)) {
+    renderAdmin();
+    return toast("এই নামের কিস্তি আগে থেকেই আছে");
+  }
+  const inst = insts().find(i => i.key === oldKey);
+  if (!inst) return;
+  inst.key = trimmedKey;
+  const oldK = fy() + "|" + oldKey;
+  const newK = fy() + "|" + trimmedKey;
+  if (S.amt[oldK]) { S.amt[newK] = S.amt[oldK]; delete S.amt[oldK]; }
+  if (S.closed.includes(oldK)) { S.closed = S.closed.filter(x => x !== oldK); S.closed.push(newK); }
+  payments.forEach(p => { if (p.fy === fy() && p.inst === oldKey) p.inst = trimmedKey; });
+  save();
+  saveS();
+  refreshAll();
+  toast("কিস্তির নাম পরিবর্তন হয়েছে");
+}
+function editInstDue(key, newDue) {
+  if (!isAdmin() || !newDue || !/^\d{4}-\d{2}-\d{2}$/.test(newDue)) return;
+  const inst = insts().find(i => i.key === key);
+  if (!inst) return;
+  inst.due = newDue;
+  saveS();
+  refreshAll();
+  toast("Due Date আপডেট হয়েছে");
+}
+function deleteInstallment(key) {
+  if (!isAdmin()) return;
+  if (payments.some(p => p.fy === fy() && p.inst === key)) {
+    return toast("এই কিস্তির Payment আছে — মুছে ফেলা যাবে না");
+  }
+  if (!confirm(`"${key}" কিস্তি মুছে ফেলবেন?`)) return;
+  const idx = insts().findIndex(i => i.key === key);
+  if (idx !== -1) {
+    insts().splice(idx, 1);
+    const k = fy() + "|" + key;
+    delete S.amt[k];
+    S.closed = S.closed.filter(x => x !== k);
+    saveS();
+    refreshAll();
+    toast("কিস্তি মুছে ফেলা হয়েছে");
+  }
+}
 function updMember(mid, f, v) {
   if (!isAdmin() || !["name", "accountNo", "role", "status", "loginOff"].includes(f)) return;
   const m = member(mid);
