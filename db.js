@@ -125,7 +125,7 @@
         return true;
       } catch (e) {
         console.error("Database save failed:", e);
-        banner("⚠️ অনলাইন Database-এ সেভ হয়নি! ইন্টারনেট চেক করুন; পরের সেভে আবার চেষ্টা হবে। দরকারে পেজ Refresh করুন।");
+        banner("⚠️ Save failed on Online Database! Check internet; next save will retryার চেষ্টা হবে। দরকারে পেজ Refresh করুন।");
         return false;
       }
     });
@@ -176,7 +176,7 @@
     const sm = new Map(state.map(r => [r.key, r.value]));
 
     if (!sm.has("_initialized")) {
-      // প্রথমবার: এই browser-এর বর্তমান ডেটা (না থাকলে Excel-এর মূল ডেটা) Database-এ তোলা হবে
+      // First time: load this browser data (or Excel master data if not present) into Databasease-এ তোলা হবে
       const localPay = JSON.parse(ls.getItem(PAY_KEY) || "null") ||
         (typeof INITIAL_PAYMENTS !== "undefined" ? INITIAL_PAYMENTS : []);
       lastPay = new Map();

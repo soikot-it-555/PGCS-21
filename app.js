@@ -26,7 +26,7 @@ const KEY = "pgcs_payments_v3", PWKEY = "pgcs_passwords_v1";
 let payments = JSON.parse(localStorage.getItem(KEY)) || INITIAL_PAYMENTS.map(p => ({ ...p }));
 let pw = JSON.parse(localStorage.getItem(PWKEY)) || {};
 let session = JSON.parse(sessionStorage.getItem("pgcs_session") || "null");
-let chart = null, lastSelectedAccount = "";
+let chart = null, lastSelectedAccount = "", personalEditMode = false;
 const save = () => localStorage.setItem(KEY, JSON.stringify(payments));
 const $ = id => document.getElementById(id);
 const fy = () => $("fy-select").value;
@@ -172,7 +172,7 @@ function renderMembers() {
   // শুধু admin-এ unchecked নয় এমন installments দেখাবো
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
-  let head = `<thead><tr><th>MID</th><th>নাম</th><th>মোট জমা</th><th>চলতি মাস পরিশোধযোগ্য</th><th>মোট Due</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
+  let head = `<thead><tr><th>MID</th><th>Name</th><th>Total Paid</th><th>Current Month Due</th><th>Total Due</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
   const f = $("filter-status").value;
   const body = list.map(m => {
     let total = 0, due = 0, cur = 0, dr = 0;
@@ -204,7 +204,7 @@ function renderMemberDetail() {
   const m = member(currentMid);
 
   if (!m) {
-    $("member-detail-content").innerHTML = `<div class="bg-white p-6 rounded-xl border"><p class="text-center text-slate-500">সদস্য তথ্য পাওয়া যায়নি</p></div>`;
+    $("member-detail-content").innerHTML = `<div class="bg-white p-6 rounded-xl border"><p class="text-center text-slate-500">Member information not found</p></div>`;
     return;
   }
 
@@ -220,12 +220,17 @@ function renderMemberDetail() {
 
   const dueInstallments = paymentDetails.filter(p => p.cell.due > 0);
 
+  const canEditPersonal = !!session;
   $("member-detail-content").innerHTML = `
     <!-- Personal Information Card -->
     <div class="bg-white rounded-xl border p-6">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-xl font-bold text-slate-800">Personal Information</h3>
-        <span class="chip ${m.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}">${m.status}</span>
+        <div class="flex gap-2">
+          <span class="chip ${m.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}">${m.status}</span>
+          ${canEditPersonal ? `<button onclick="togglePersonalEdit()" class="bg-slate-700 hover:bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg">${personalEditMode ? "Cancel" : "Edit"}</button>` : ""}
+          ${personalEditMode && canEditPersonal ? `<button onclick="savePersonalInfo()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg">Save</button>` : ""}
+        </div>
       </div>
       <div class="grid md:grid-cols-2 gap-4">
         <div>
@@ -252,6 +257,57 @@ function renderMemberDetail() {
           <p class="text-sm text-slate-500">Serial Number</p>
           <p class="font-semibold">${m.sl}</p>
         </div>
+        <div>
+          <p class="text-sm text-slate-500">Mobile Number</p>
+          <p class="font-semibold font-mono">${m.mobile || "—"}</p>
+        </div>
+        ${personalEditMode ? `
+        <div>
+          <p class="text-xs text-slate-500">Nominee</p>
+          <input type="text" id="pi-nominee" class="border rounded p-2 w-full text-sm" value="${m.nominee || ""}">
+        </div>
+        <div>
+          <p class="text-xs text-slate-500">Relationship with Nominee</p>
+          <input type="text" id="pi-relation" class="border rounded p-2 w-full text-sm" value="${m.nomineeRelation || ""}">
+        </div>
+        <div>
+          <p class="text-xs text-slate-500">Nominee NID</p>
+          <input type="text" id="pi-nid" class="border rounded p-2 w-full text-sm font-mono" value="${m.nomineeNID || ""}">
+        </div>
+        <div>
+          <p class="text-xs text-slate-500">Mobile Number</p>
+          <input type="text" id="pi-mobile" class="border rounded p-2 w-full text-sm" value="${m.mobile || ""}">
+        </div>
+        <div>
+          <p class="text-xs text-slate-500">Present Address</p>
+          <input type="text" id="pi-present" class="border rounded p-2 w-full text-sm" value="${m.presentAddress || ""}">
+        </div>
+        <div>
+          <p class="text-xs text-slate-500">Permanent Address</p>
+          <input type="text" id="pi-permanent" class="border rounded p-2 w-full text-sm" value="${m.permanentAddress || ""}">
+        </div>
+        ` : `
+        <div>
+          <p class="text-sm text-slate-500">Nominee</p>
+          <p class="font-semibold">${m.nominee || "—"}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Relationship with Nominee</p>
+          <p class="font-semibold">${m.nomineeRelation || "—"}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Nominee NID</p>
+          <p class="font-semibold font-mono">${m.nomineeNID || "—"}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Present Address</p>
+          <p class="font-semibold">${m.presentAddress || "—"}</p>
+        </div>
+        <div>
+          <p class="text-sm text-slate-500">Permanent Address</p>
+          <p class="font-semibold">${m.permanentAddress || "—"}</p>
+        </div>
+        `}
       </div>
     </div>
 
@@ -344,6 +400,60 @@ function renderMemberDetail() {
       </div>
     </div>
   `;
+}
+
+
+// ---------- Personal Info Edit Helpers ----------
+function togglePersonalEdit() { personalEditMode = !personalEditMode; renderMemberDetail(); }
+function savePersonalInfo() {
+  const fields = ["nominee", "nomineeRelation", "nomineeNID", "mobile", "presentAddress", "permanentAddress"];
+  const ids = ["pi-nominee", "pi-relation", "pi-nid", "pi-mobile", "pi-present", "pi-permanent"];
+  fields.forEach((f, i) => { updMember(session.mid, f, $(ids[i]).value.trim()); });
+  personalEditMode = false;
+  renderMemberDetail();
+  toast("Personal information updated");
+}
+
+// ---------- Members' Directory ----------
+function renderMemberDirectory() {
+  const q = ($("member-search").value || "").toLowerCase().trim();
+  const list = MEMBERS.filter(m => !q || m.mid.toLowerCase().includes(q) || m.name.toLowerCase().includes(q) || (m.accountNo || "").toLowerCase().includes(q));
+  $("member-directory-body").innerHTML = list.map(m => `
+    <tr class="border-b hover:bg-slate-50">
+      <td class="p-3 text-slate-600">${m.sl}</td>
+      <td class="p-3 font-mono text-slate-800">${m.mid}</td>
+      <td class="p-3 font-semibold">${m.name}</td>
+      <td class="p-3 text-slate-600">${m.nominee || "—"}</td>
+      <td class="p-3 text-slate-600">${m.nomineeRelation || "—"}</td>
+      <td class="p-3 font-mono text-slate-600">${m.nomineeNID || "—"}</td>
+      <td class="p-3 text-slate-600">${m.presentAddress || "—"}</td>
+      <td class="p-3 text-slate-600">${m.permanentAddress || "—"}</td>
+      <td class="p-3 font-mono text-slate-600">${m.mobile || "—"}</td>
+      <td class="p-3 font-mono text-slate-600">${m.accountNo || "—"}</td>
+      <td class="p-3 text-slate-600">${m.role}</td>
+      <td class="p-3"><span class="chip ${m.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}">${m.status}</span></td>
+    </tr>`).join("");
+  if (q && list.length === 0) $("member-directory-body").innerHTML = '<tr><td colspan="11" class="p-4 text-center text-slate-500">কোনো সদস্য পাওয়া যায়নি</td></tr>';
+  $("member-count").textContent = list.length + " সদস্য";
+}
+
+function downloadMembersDirectoryPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text("PGCS-21 — Members' Directory", 14, 16);
+  doc.setFontSize(11);
+  doc.text("Members Directory — " + new Date().toLocaleDateString("en-GB"), 14, 26);
+  const rows = MEMBERS.map(m => [m.sl, m.mid, m.name, m.nominee || "—", m.nomineeRelation || "—", m.nomineeNID || "—", m.presentAddress || "—", m.permanentAddress || "—", m.mobile || "—", m.accountNo || "—", m.role, m.status]);
+  doc.autoTable({
+    head: [["SL", "MID", "Name", "Nominee", "Relationship", "Nominee NID", "Present Address", "Permanent Address", "Mobile", "Account No", "Role", "Status"]],
+    body: rows,
+    startY: 36,
+    theme: "striped",
+    headStyles: { fillColor: [15, 118, 110] }
+  });
+  doc.save("PGCS-21_Members_Directory.pdf");
+  toast("Members' Directory PDF downloaded");
 }
 
 // ---------- Entry ----------
@@ -502,7 +612,7 @@ function renderApprovals() {
 function setStatus(id, s) {
   if (!isApprover() || !["Approved", "Rejected"].includes(s)) return;
   const payment = payments.find(p => p.id === id && p.status === "Draft");
-  if (!payment) return toast("শুধু Draft অনুমোদন বা বাতিল করা যাবে");
+  if (!payment) return toast("শুধু Draft অনুমোদন বা Cancel করা যাবে");
   payment.status = s; save(); refreshAll(); toast(s);
 }
 function delPayment(id) {
@@ -683,17 +793,24 @@ function exportDashboardTablePDF() {
 
   signBlock(doc);
   doc.save(`PGCS_${fy()}_Dashboard_Table.pdf`);
-  toast("Dashboard Table PDF Download হয়েছে");
+  toast("Dashboard Table PDF Downloaded");
 }
 const { jsPDF } = window.jspdf;
 
 // ---------- Navigation ----------
 function showPage(id) {
-  if (!canAccessPage(id)) return toast("এই Page দেখার অনুমতি নেই");
+  if (!canAccessPage(id)) return toast("No permission to view this page");
   document.querySelectorAll(".page-section").forEach(s => s.classList.add("hidden"));
   $("page-" + id).classList.remove("hidden");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
   $("nav-" + id).classList.add("active");
+  if (id === "member-detail") {
+    renderMemberDetail();
+    const role = currentRole();
+    const showDir = role === "adminIT" || role === "admin";
+    $("member-directory-container").classList.toggle("hidden", !showDir);
+    if (showDir) renderMemberDirectory();
+  }
 }
 function renderAdmin() {
   if (!isAdmin()) return;
@@ -702,24 +819,40 @@ function renderAdmin() {
     <div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
     <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
     <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p></div>
-    <label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> সদস্যদের জন্য Form চালু</label>
-    <div class="grid md:grid-cols-2 gap-3 my-3"><div><label class="lbl">Payment Method (কমা দিয়ে আলাদা)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
+    <div class="border rounded-xl p-3 mb-4 bg-slate-50">
+      <p class="font-semibold mb-2">Add New Member</p>
+      <div class="grid md:grid-cols-2 gap-3">
+        <div><label class="lbl">MID (Username)</label><input class="inp" id="m-mid" value="" onchange="validateAddMember()"></div>
+        <div><label class="lbl">Name</label><input class="inp" id="m-name" value="" onchange="validateAddMember()"></div>
+        <div><label class="lbl">Membership Role</label><input class="inp" id="m-role" value="Member" onchange="validateAddMember()"></div>
+        <div><label class="lbl">Role Name</label>
+          <select class="border rounded p-1 w-full" id="m-roleName" onchange="validateAddMember()">${Object.entries(ACCESS_ROLES).map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select></div>
+        <div><label class="lbl">Status</label>
+          <select class="border rounded p-1 w-full" id="m-status" onchange="validateAddMember()"><option value="Active">Active</option><option value="Withdrawn">Withdrawn</option></select></div>
+        <div><label class="lbl">Password (6+ chars)</label><input type="password" class="inp" id="m-pw" placeholder="Leave blank for default" onchange="validateAddMember()"></div>
+        <div><label class="lbl">Mobile Number</label><input class="inp" id="m-mobile" value="" onchange="validateAddMember()"></div>
+        <div><label class="lbl">Login</label><input type="checkbox" id="m-login" checked onchange="validateAddMember()"></div>
+      </div>
+      <button onclick="doAddMember()" class="bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg mt-2">+ Add Member</button>
+    </div>
+    <label class="text-sm"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
+    <div class="grid md:grid-cols-2 gap-3 my-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
     <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>
-    <div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — কিস্তি Management</p>
-    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ নতুন কিস্তি যোগ করুন</button></div>
-    <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th class="p-2 text-left">কিস্তি নাম</th><th class="text-left">Due Date</th><th class="text-left">Amount (৳)</th><th class="text-center">Entry Form-এ দেখাবে</th><th></th></tr></thead>
+    <div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — Installment Management</p>
+    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ Add New Installment</button></div>
+    <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th class="p-2 text-left">Installment Name</th><th class="text-left">Due Date</th><th class="text-left">Amount (TK)</th><th class="text-center">Show in Entry Form</th><th></th></tr></thead>
     <tbody>${insts().map(i => `<tr class="border-b"><td class="p-2"><input type="text" class="border rounded px-2 py-1 w-full" value="${i.key}" onchange="editInstName('${i.key}',this.value)"></td>
       <td><input type="date" class="border rounded px-2 py-1" value="${i.due}" onchange="editInstDue('${i.key}',this.value)"></td>
       <td><input type="number" class="border rounded px-2 py-1 w-28" value="${i.amount}" onchange="setAmt('${k(i)}',this.value)"></td>
       <td class="text-center"><input type="checkbox" ${S.closed.includes(k(i)) ? "" : "checked"} onchange="toggleInst('${k(i)}',this.checked)"></td>
-      <td><button onclick="deleteInstallment('${i.key}')" class="text-rose-600 hover:underline">মুছুন</button></td></tr>`).join("")}</tbody></table></div>`;
+      <td><button onclick="deleteInstallment('${i.key}')" class="text-rose-600 hover:underline">Delete</button></td></tr>`).join("")}</tbody></table></div>`;
   const inp = (mid, f, v, w = "w-32") => `<input class="border rounded p-1 ${w}" value="${v}" onchange="updMember('${mid}','${f}',this.value)">`;
-  $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>নাম</th><th>Account No</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th></th></tr>` +
+  $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>Name</th><th>Account No</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th>Mobile</th><th></th></tr>` +
     MEMBERS.map(m => `<tr class="border-b"><td class="p-2 font-mono">${m.mid}</td><td>${inp(m.mid, "name", m.name, "w-44")}</td><td>${inp(m.mid, "accountNo", m.accountNo)}</td><td>${inp(m.mid, "role", m.role, "w-40")}</td>
       <td><select class="border rounded p-1" onchange="setAccessRole('${m.mid}',this.value)">${Object.entries(ACCESS_ROLES).map(([value, label]) => `<option value="${value}" ${accessRole(m) === value ? "selected" : ""}>${label}</option>`).join("")}</select></td>
       <td><select class="border rounded p-1" onchange="updMember('${m.mid}','status',this.value)"><option ${m.status === "Active" ? "selected" : ""}>Active</option><option ${m.status === "Withdrawn" ? "selected" : ""}>Withdrawn</option></select></td>
       <td>${pw[m.mid] ? "Custom" : "Default"} <button class="text-blue-600 underline" onclick="setPw('${m.mid}')">Set</button> <button class="text-slate-500 underline" onclick="resetPw('${m.mid}')">Reset</button></td>
-      <td><label><input type="checkbox" ${m.loginOff ? "" : "checked"} onchange="updMember('${m.mid}','loginOff',!this.checked)"> চালু</label></td>
+      <td><label><input type="checkbox" ${m.loginOff ? "" : "checked"} onchange="updMember('${m.mid}','loginOff',!this.checked)"> Login</label></td>
       <td><button class="text-rose-600" onclick="delMember('${m.mid}')">Delete</button></td></tr>`).join("");
 }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
@@ -727,12 +860,12 @@ function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(
 function setAmt(k, v) { if (!isAdmin()) return; S.amt[k] = Number(v); saveS(); applyAmounts(); refreshAll(); toast("Saved"); }
 function addInstallment() {
   if (!isAdmin()) return;
-  const key = prompt("নতুন কিস্তির নাম দিন (যেমন: July, BPPF):");
+  const key = prompt("Enter New Installment Name (e.g., July, BPPF):");
   if (!key || !key.trim()) return;
   const trimmedKey = key.trim();
-  if (insts().find(i => i.key === trimmedKey)) return toast("এই নামের কিস্তি আগে থেকেই আছে");
+  if (insts().find(i => i.key === trimmedKey)) return toast("Installment name already exists");
   const due = prompt("Due Date (YYYY-MM-DD ফরম্যাটে, যেমন: 2025-07-25):");
-  if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return toast("সঠিক তারিখ দিন (YYYY-MM-DD)");
+  if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return toast("Enter correct date (YYYY-MM-DD)");
   const amount = prompt("Amount (টাকা):");
   if (!amount || isNaN(amount) || Number(amount) <= 0) return toast("সঠিক টাকার পরিমাণ দিন");
   YEARS[fy()].push({ key: trimmedKey, due, amount: Number(amount) });
@@ -747,7 +880,7 @@ function editInstName(oldKey, newKey) {
   if (trimmedKey === oldKey) return;
   if (insts().find(i => i.key === trimmedKey)) {
     renderAdmin();
-    return toast("এই নামের কিস্তি আগে থেকেই আছে");
+    return toast("Installment name already exists");
   }
   const inst = insts().find(i => i.key === oldKey);
   if (!inst) return;
@@ -760,7 +893,7 @@ function editInstName(oldKey, newKey) {
   save();
   saveS();
   refreshAll();
-  toast("কিস্তির নাম পরিবর্তন হয়েছে");
+  toast("Installment name changed");
 }
 function editInstDue(key, newDue) {
   if (!isAdmin() || !newDue || !/^\d{4}-\d{2}-\d{2}$/.test(newDue)) return;
@@ -789,7 +922,8 @@ function deleteInstallment(key) {
   }
 }
 function updMember(mid, f, v) {
-  if (!isAdmin() || !["name", "accountNo", "role", "status", "loginOff"].includes(f)) return;
+  if (!["name", "accountNo", "role", "status", "loginOff", "mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"].includes(f)) return;
+if (!isAdmin() && !["mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"].includes(f)) return;
   const m = member(mid);
   if (!m) return toast("সদস্য পাওয়া যায়নি");
   if (f === "loginOff" && v && accessRole(m) === "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) {
@@ -816,18 +950,58 @@ function setAccessRole(mid, role) {
     refreshAll();
   }
 }
-function setPw(mid) { if (!isAdmin()) return; const p = prompt(`${mid}-এর নতুন password (কমপক্ষে 6 অক্ষর):`); if (p && p.length >= 6) { pw[mid] = p; localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast("Password সেট হয়েছে"); } }
+function setPw(mid) { if (!isAdmin()) return; const p = prompt(`${mid} - New password (6+ chars):`); if (p && p.length >= 6) { pw[mid] = p; localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast("Password সেট হয়েছে"); } }
 function resetPw(mid) { if (!isAdmin()) return; delete pw[mid]; localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast("Default password (" + DEFAULT_MEMBER_PASS + ")"); }
+function doAddMember() {
+  if (!isAdmin()) return;
+  const mid = $("#m-mid").value.trim();
+  if (!mid || member(mid)) return toast("MID is not valid or already exists");
+  const name = $("#m-name").value.trim();
+  if (!name) return toast("Name is required");
+  const role = $("#m-role").value.trim() || "Member";
+  const accessRole = $("#m-roleName").value;
+  const status = $("#m-status").value;
+  if (!["Active", "Withdrawn"].includes(status)) return toast("Choose correct Status");
+  const password = $("#m-pw").value.trim();
+  const mobile = $("#m-mobile").value.trim();
+  const loginOff = !$("#m-login").checked;
+  const newMember = {
+    sl: Math.max(...MEMBERS.map(m => m.sl)) + 1,
+    mid, name, accountNo: "", mobile, status, role, accessRole, loginOff
+  };
+  MEMBERS.push(newMember);
+  saveMembers();
+  if (password.length >= 6) {
+    pw[mid] = password;
+    localStorage.setItem(PWKEY, JSON.stringify(pw));
+  }
+  $("#m-mid").value = "";
+  $("#m-name").value = "";
+  $("#m-role").value = "Member";
+  $("#m-pw").value = "";
+  $("#m-mobile").value = "";
+  $("#m-login").checked = true;
+  renderAdmin();
+  toast("New member added successfully");
+}
+
+function validateAddMember() {
+  const mid = $("#m-mid").value.trim();
+  if (mid && member(mid)) return toast("MID already exists");
+  const name = $("#m-name").value.trim();
+  if (!name) return toast("Name is required");
+  const status = $("#m-status").value;
+  if (!["Active", "Withdrawn"].includes(status)) return toast("Choose correct Status");
+}
+
 function addMember() {
   if (!isAdmin()) return;
-  const n = prompt("সদস্যের নাম:"), mid = prompt("MID (যেমন PGCS-2118):");
-  if (!n || !mid || member(mid)) return toast("নাম/MID ঠিক নেই বা MID আগে থেকেই আছে");
-  MEMBERS.push({ sl: Math.max(...MEMBERS.map(m => m.sl)) + 1, mid: mid.trim(), name: n.trim(), accountNo: "", status: "Active", role: "Member", accessRole: "member" }); saveMembers(); refreshAll();
+  doAddMember();
 }
 function delMember(mid) {
   if (!isAdmin()) return;
   const m = member(mid);
-  if (m && accessRole(m) === "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) return toast("একমাত্র Admin (IT) মুছে ফেলা যাবে না");
+  if (m && accessRole(m) === "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) return toast("The only Admin (IT) cannot be deleted");
   if (payments.some(p => p.mid === mid)) return toast("Payment থাকা সদস্য মোছা যাবে না — Status 'Withdrawn' করুন");
   if (confirm(mid + " মুছবেন?")) { MEMBERS.splice(MEMBERS.findIndex(m => m.mid === mid), 1); saveMembers(); refreshAll(); }
 }

@@ -71,18 +71,18 @@
     <section id="page-dashboard" class="page-section">
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5" id="stats"></div>
       <div class="bg-white rounded-xl border p-4 mb-5">
-        <h4 class="font-semibold mb-2 text-sm">মাসওয়ারি জমা (Approved)</h4>
+        <h4 class="font-semibold mb-2 text-sm">Monthly Payments (Approved)</h4>
         <div class="h-56"><canvas id="monthlyChart"></canvas></div>
       </div>
       <div class="flex flex-wrap gap-3 items-center mb-3">
-        <h3 class="font-bold text-lg">সদস্যদের জমা ও বকেয়া</h3>
+        <h3 class="font-bold text-lg">Members & Due</h3>
         <button onclick="exportDashboardTablePDF()" class="bg-rose-600 hover:bg-rose-700 text-white text-sm px-4 py-2 rounded-lg">📄 PDF Export</button>
-        <input id="search-member" oninput="renderMembers()" placeholder="নাম বা MID দিয়ে Search..." class="border rounded-lg px-4 py-2 text-sm ml-auto w-64" />
+        <input id="search-member" oninput="renderMembers()" placeholder="Search by Name or MID..." class="border rounded-lg px-4 py-2 text-sm ml-auto w-64" />
         <select id="filter-status" onchange="renderMembers()" class="border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="ALL">সব সদস্য</option><option value="DUE">শুধু Due আছে</option>
-          <option value="DRAFT">শুধু Draft আছে</option><option value="FULL">Payment Full (Due নেই)</option></select>
+          <option value="ALL">All Members</option><option value="DUE">Only Due</option>
+          <option value="DRAFT">Only Draft</option><option value="FULL">Payment Full (No Due)</option></select>
       </div>
-      <p class="text-xs text-slate-500 mb-2">প্রতি মাসের ২৫ তারিখ পার হলে পরিশোধ না হওয়া কিস্তি <span class="chip bg-rose-100 text-rose-700">Due</span> দেখাবে। Draft = Admin approve করেনি।</p>
+      <p class="text-xs text-slate-500 mb-2">Installments due after the 25th of each month <span class="chip bg-rose-100 text-rose-700">Due</span> দেখাবে। Draft = Admin approve করেনি।</p>
       <div class="bg-white rounded-xl border overflow-x-auto">
         <table class="w-full text-xs text-left" id="matrix"></table>
       </div>
@@ -111,8 +111,49 @@
 
     <!-- Members' Detail -->
     <section id="page-member-detail" class="page-section hidden">
-      <h2 class="text-2xl font-bold mb-4">Members' Detail</h2>
+      <div class="flex flex-col md:flex-row md:items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-2xl font-bold text-slate-800">Members' Detail</h2>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="exportMemberListExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg">📤 Excel Export</button>
+          <button onclick="downloadMembersDirectoryPDF()" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-2 rounded-lg">📄 PDF Download</button>
+        </div>
+      </div>
+
       <div id="member-detail-content" class="space-y-5"></div>
+
+      <!-- All Members Directory (Only Admin (IT) and Admin can see) -->
+      <div id="member-directory-container" class="bg-white rounded-xl border overflow-hidden hidden mt-6">
+        <div class="bg-slate-50 px-5 py-3 border-b flex flex-wrap justify-between items-center gap-2">
+          <h3 class="text-sm font-bold text-slate-800">Members Directory</h3>
+          <div class="flex gap-2">
+            <input type="text" id="member-search" placeholder="Search by MID, Name or Account No..." class="border rounded px-3 py-1.5 text-sm w-64" oninput="renderMemberDirectory()">
+            <span id="member-count" class="text-xs text-slate-500 bg-slate-200 px-2 py-1 rounded">0 members</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-100 sticky top-0 z-10">
+              <tr>
+                <th class="p-3 text-left">SL</th>
+                <th class="p-3 text-left">MID (Username)</th>
+                <th class="p-3 text-left">Name</th>
+                <th class="p-3 text-left">Nominee</th>
+                <th class="p-3 text-left">Relationship</th>
+                <th class="p-3 text-left">Nominee NID</th>
+                <th class="p-3 text-left">Present Address</th>
+                <th class="p-3 text-left">Permanent Address</th>
+                <th class="p-3 text-left">Mobile</th>
+                <th class="p-3 text-left">Account No</th>
+                <th class="p-3 text-left">Role</th>
+                <th class="p-3 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody id="member-directory-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- Approvals / My submissions -->
@@ -124,10 +165,10 @@
     <!-- Admin (IT) -->
     <section id="page-admin" class="page-section hidden">
       <h2 class="text-2xl font-bold mb-4">Admin (IT) Control Panel</h2>
-      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Data Entry Form নিয়ন্ত্রণ</h3><div id="admin-form"></div></div>
+      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Data Entry Form Control</h3><div id="admin-form"></div></div>
       <div class="bg-white rounded-xl border p-5">
-        <div class="flex items-center mb-3"><h3 class="font-bold">সদস্য ও Login (Username = MID)</h3>
-          <button onclick="addMember()" class="ml-auto bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg">+ নতুন সদস্য</button></div>
+        <div class="flex items-center mb-3"><h3 class="font-bold">Members & Login (Username = MID)</h3>
+          <button onclick="addMember()" class="ml-auto bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg">+ New Member</button></div>
         <div class="overflow-x-auto"><table class="w-full text-xs text-left" id="admin-users"></table></div>
       </div>
     </section>
