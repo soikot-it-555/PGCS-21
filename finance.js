@@ -24,7 +24,10 @@ let FTX = JSON.parse(localStorage.getItem(FIN_TX_KEY) || "[]");
 let FCFG = JSON.parse(localStorage.getItem(FIN_CFG_KEY) || '{"accounts":[]}'); FCFG.accounts = FCFG.accounts || [];
 const saveTx = () => localStorage.setItem(FIN_TX_KEY, JSON.stringify(FTX));
 const saveCfg = () => localStorage.setItem(FIN_CFG_KEY, JSON.stringify(FCFG));
-if (S.fin && S.fin.tx && S.fin.tx.length && !FTX.length) { FTX = S.fin.tx.map(t => ({ ...t, id: String(t.id) })); saveTx(); }   // আগের সংস্করণ থেকে স্থানান্তর
+if (S.fin && S.fin.tx && S.fin.tx.length) {   // আগের সংস্করণ থেকে স্থানান্তর — শুধু যেগুলো নেই সেগুলো যোগ হয়, কিছু বাদ পড়ে না (id দিয়ে duplicate রোধ)
+  const have = new Set(FTX.map(t => String(t.id))), miss = S.fin.tx.filter(t => !have.has(String(t.id))).map(t => ({ ...t, id: String(t.id) }));
+  if (miss.length) { FTX = [...FTX, ...miss]; saveTx(); }
+}
 if (S.fin) { delete S.fin; saveS(); }
 const finId = () => (crypto.randomUUID ? crypto.randomUUID() : "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
 
@@ -501,3 +504,12 @@ function finPDF() {
   tb(y3, ["SL NO.", "MID", "Name", "Amount (Taka)"], [...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), f(x.fee)]), tot("Total", f(R.I.membership))], { 2: { halign: "left" }, 3: tr }); signBlock(doc);
   doc.save(`PGCS-21_Financial_Statement_${finFY}_${R.asOf}.pdf`); toast("Financial Statement PDF downloaded");
 }
+
+// ---------- Remote updates (Supabase Realtime / resync) ----------
+// db.js already refreshed the localStorage cache without writing to the database; here we only update memory + screen.
+function finRemoteRefresh() {
+  if (!$("page-financial").classList.contains("hidden")) { renderFinance(); if (typeof finDocsRender === "function" && !$("fin-docs-modal")?.classList.contains("hidden")) { try { finDocsRender(); } catch (e) { } } }
+  if (typeof renderFinConfig === "function" && $("page-admin") && !$("page-admin").classList.contains("hidden")) renderFinConfig();
+}
+DB.subscribe("finTx", v => { FTX = v; finRemoteRefresh(); });
+DB.subscribe("finCfg", v => { FCFG = v || { accounts: [] }; FCFG.accounts = FCFG.accounts || []; finRemoteRefresh(); });

@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgcs-portal-v6";
+const CACHE_NAME = "pgcs-portal-v7";
 const BASE_URL = new URL("./", self.location.href);
 const APP_FILES = [
   "",
@@ -31,7 +31,9 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
-  if (new URL(event.request.url).hostname.endsWith(".supabase.co")) return; // Database ডেটা কখনো cache নয়
+  const u = new URL(event.request.url);
+  if (u.hostname.endsWith(".supabase.co") || u.hostname.endsWith(".supabase.in")) return; // Database / Storage / Realtime কখনো cache নয়
+  if (event.request.headers.has("range") || u.protocol === "chrome-extension:") return;
   // Network-first: নতুন ফাইল সবসময় আগে আসবে; অফলাইনে থাকলে cache থেকে দেখাবে
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

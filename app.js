@@ -42,7 +42,12 @@ const canAccessPage = page => ({
 }[currentRole()] || []).includes(page);
 const fmt = n => "৳ " + Number(n).toLocaleString("en-IN");
 const member = mid => MEMBERS.find(m => m.mid === mid);
-const toast = msg => { $("toast").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(() => $("toast").classList.add("hidden"), 3000); };
+const showToast = msg => { $("toast").textContent = msg; $("toast").classList.remove("hidden"); clearTimeout(showToast.t); showToast.t = setTimeout(() => $("toast").classList.add("hidden"), msg.startsWith("⚠️") ? 8000 : 3000); };
+// A save is only reported as successful after the Database confirmed it (never show success for a failed write)
+const toast = msg => {
+  if (window.DB && DB.pending()) DB.flush().then(ok => showToast(ok ? msg : "⚠️ Database-এ সেভ হয়নি — পুনরায় চেষ্টা চলছে। (" + msg + ")"));
+  else showToast(msg);
+};
 
 // ---------- Auth ----------
 $("loginForm").addEventListener("submit", e => {
@@ -67,6 +72,7 @@ function changePassword() {
 }
 function resetData() {
   if (!isAdmin() || !confirm("সব data Excel-এর মূল অবস্থায় ফিরবে। নিশ্চিত?")) return;
+  if (prompt("এটি অনলাইন Database-এর সব Payment মুছে Excel-এর মূল data বসাবে — সবার জন্য। চালিয়ে যেতে RESET লিখুন:") !== "RESET") return toast("Reset বাতিল");
   payments = INITIAL_PAYMENTS.map(p => ({ ...p })); save(); refreshAll(); toast("Reset সম্পন্ন");
 }
 
@@ -1075,4 +1081,46 @@ function startApp() {
   fillAccount();
   showPage(isAdmin() ? "dashboard" : currentRole() === "admin" ? "approvals" : "entry");
 }
+// ---------- Remote updates (Supabase Realtime / resync) ----------
+// db.js has already updated localStorage (cache) WITHOUT writing back to the database; here we only
+// refresh the in-memory data and the screen.
+function remoteRefresh(what) {
+  if (!session) return;
+  const me = member(session.mid);
+  if (!me || me.loginOff) { alert("আপনার account পরিবর্তন/বন্ধ হয়েছে। আবার login করুন।"); return logout(); }
+  if (accessRole(me) !== session.role) return startApp();            // role changed by an admin
+  const entryOpen = !$("page-entry").classList.contains("hidden");
+  const checked = [...document.querySelectorAll(".installment-checkbox:checked:not(:disabled)")].map(x => x.value);
+  if (what === "members") {
+    const keepM = $("entry-member").value, keepR = $("report-member-select").value;
+    $("entry-member").innerHTML = (isAdmin() ? MEMBERS.filter(m => m.status === "Active") : [member(session.mid)]).map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");
+    if ([...$("entry-member").options].some(o => o.value === keepM)) $("entry-member").value = keepM;
+    $("report-member-select").innerHTML = MEMBERS.map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");
+    if ([...$("report-member-select").options].some(o => o.value === keepR)) $("report-member-select").value = keepR;
+    $("who").textContent = `${ACCESS_ROLES[currentRole()]} — ${me.name} (${session.mid})`;
+  }
+  if (what === "settings") {
+    applyAmounts();
+    const keep = { m: $("entry-method").value, a: $("entry-account").value, amt: $("entry-amount").value };
+    renderEntryOptions(); if (S.methods.includes(keep.m)) $("entry-method").value = keep.m; renderAccountOptions(keep.a);
+  }
+  if (["payments", "settings", "members"].includes(what) && entryOpen) {   // keep half-filled Payment Entry form intact
+    renderInstallmentCheckboxes();
+    document.querySelectorAll(".installment-checkbox:not(:disabled)").forEach(x => { x.checked = checked.includes(x.value); });
+    syncAmount();
+  }
+  refreshAll();
+  if (!$("page-member-detail").classList.contains("hidden") && !personalEditMode) { renderMemberDetail(); if (!$("member-directory-container").classList.contains("hidden")) renderMemberDirectory(); }
+}
+DB.subscribe("payments", v => { payments = v; remoteRefresh("payments"); });
+DB.subscribe("members", v => { MEMBERS.length = 0; MEMBERS.push(...v); remoteRefresh("members"); });
+DB.subscribe("passwords", v => { pw = v || {}; });
+DB.subscribe("settings", v => {
+  for (const k of Object.keys(S)) delete S[k];
+  Object.assign(S, { formOpen: true, methods: ["Magpie-Fund Transfer", "BEFTN", "NPSB", "Cash Payment"], bank: "BASIC Bank PLC", closed: [], amt: {}, accounts: [] }, v);
+  remoteRefresh("settings");
+});
+// a save that lost a conflict was replaced by the newest server copy: re-render so the screen matches
+window.addEventListener("db-conflict", () => remoteRefresh("payments"));
+
 if (session) startApp();

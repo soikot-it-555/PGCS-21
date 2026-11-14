@@ -213,6 +213,7 @@
 <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-5 py-3 rounded-lg shadow-lg hidden z-50"></div>
 
 <script src="data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script src="db.js"></script>
 <script>
   // Database থেকে ডেটা নামানোর পর assets.js ও app.js চালু হবে
@@ -230,7 +231,8 @@
           document.body.appendChild(s);
         });
       }
-      window.__appReady = true;
+      DB.startRealtime();            // 7. realtime only after app + cache are ready
+      window.__appReady = true;      // 8. login enabled only after initial sync
       st.remove();
     } catch (err) {
       console.error(err);
