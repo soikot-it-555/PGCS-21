@@ -8,7 +8,7 @@
 
   // ▼▼▼ শুধু এই দুটি লাইন বদলান (Supabase → Project Settings → API Keys) ▼▼▼
   const SUPABASE_URL = "https://lknftxkkplztbcovprma.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxrbmZ0eGtrcGx6dGJjb3Zwcm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NzYxNDEsImV4cCI6MjExMDE1MjE0MX0.QAkBjY1k3ObKXdIryhuA-1a3M5-VpmEdQ7vEhlsBakc";
+  const SUPABASE_KEY = "sb_publishable_6MByUD2x5QZxOjrI34fqRw_npSJXcl7";
   // ▲▲▲ service_role / secret key কখনো এখানে বসাবেন না ▲▲▲
 
   const MEMBERS_KEY = "pgcs_members_v1";
@@ -17,6 +17,11 @@
   const PAY_KEY = "pgcs_payments_v3";
   const STATE_KEYS = [MEMBERS_KEY, SETTINGS_KEY, PW_KEY];
   const UPSERT = { Prefer: "resolution=merge-duplicates,return=minimal" };
+
+  // sb_publishable_ key JWT নয়, তাই Authorization: Bearer হিসেবে পাঠানো যাবে না (শুধু apikey)
+  const authHeaders = () => SUPABASE_KEY.startsWith("sb_")
+    ? { apikey: SUPABASE_KEY }
+    : { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY };
 
   const ls = window.localStorage;
   const origSet = Storage.prototype.setItem;
@@ -35,8 +40,7 @@
         method,
         cache: "no-store",
         headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: "Bearer " + SUPABASE_KEY,
+          ...authHeaders(),
           "Content-Type": "application/json",
           ...headers
         },
@@ -150,23 +154,20 @@
   async function init() {
     if (!configured) throw new Error("db.js ফাইলে Supabase URL ও Key বসানো হয়নি");
 
-    // প্রথমে Supabase URL/Key সঠিক কিনা দ্রুত চেক
+    // সংযোগ/Key যাচাই: আসল table-এ একটি ছোট query (root /rest/v1/ এখন anon key-তে 401 দেয়, তাই সেটা ব্যবহার করা হয় না)
+    let probe;
     try {
-      const testRes = await fetch(SUPABASE_URL + "/rest/v1/", {
-        method: "HEAD",
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: "Bearer " + SUPABASE_KEY
-        }
-      });
-      if (testRes.status === 401 || testRes.status === 403) {
-        throw new Error("Supabase API Key ভুল বা মেয়াদোত্তীর্ণ। Supabase Dashboard → Project Settings → API থেকে সঠিক anon/public key কপি করুন।");
-      }
+      probe = await fetch(SUPABASE_URL + "/rest/v1/app_state?select=key&limit=1", { headers: authHeaders(), cache: "no-store" });
     } catch (e) {
-      if (e.message.includes("Failed to fetch") || e.name === "TypeError") {
-        throw new Error("Supabase URL-এ সংযোগ হচ্ছে না। ইন্টারনেট সংযোগ চেক করুন, এবং Supabase URL ('" + SUPABASE_URL + "') সঠিক কিনা যাচাই করুন।");
-      }
-      throw e;
+      throw new Error("Supabase URL-এ সংযোগ হচ্ছে না। ইন্টারনেট চেক করুন।");
+    }
+    if (!probe.ok) {
+      const t = (await probe.text()).slice(0, 160);
+      if (probe.status === 404 || /PGRST205|does not exist|schema cache/i.test(t))
+        throw new Error("Table পাওয়া যায়নি — Supabase SQL Editor-এ supabase-setup.sql একবার Run করুন। (" + t + ")");
+      if (probe.status === 401 || probe.status === 403)
+        throw new Error("Key গ্রহণ হয়নি বা RLS policy নেই (" + probe.status + "): " + t);
+      throw new Error("Supabase " + probe.status + ": " + t);
     }
 
     const [state, pays] = await withRetry(() =>
