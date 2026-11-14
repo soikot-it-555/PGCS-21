@@ -93,7 +93,9 @@
       <p id="form-closed" class="hidden bg-amber-50 border border-amber-300 text-amber-800 p-4 rounded-lg max-w-2xl mb-3">Admin বর্তমানে Data Entry Form বন্ধ রেখেছেন।</p>
       <form id="paymentForm" class="bg-white p-6 rounded-xl border max-w-2xl grid md:grid-cols-2 gap-4">
         <div><label class="lbl">সদস্য</label><select id="entry-member" class="inp"></select></div>
-        <div><label class="lbl">কিস্তি / Installment</label><select id="entry-installment" class="inp" onchange="syncAmount()"></select></div>
+        <div class="md:col-span-2"><label class="lbl">কিস্তি / Installment (একাধিক select করতে পারবেন)</label>
+          <div id="installment-checkboxes" class="border rounded-lg p-3 bg-slate-50 max-h-48 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+        </div>
         <div><label class="lbl">Payment Method</label>
           <select id="entry-method" class="inp"></select></div>
         <div><label class="lbl">Payment Date</label><input type="date" id="entry-date" required class="inp" /></div>

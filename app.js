@@ -187,9 +187,20 @@ function renderEntryOptions() {
   const open = S.formOpen || isAdmin();
   $("form-closed").classList.toggle("hidden", open); $("paymentForm").classList.toggle("hidden", !open);
   $("entry-method").innerHTML = S.methods.map(x => `<option>${x}</option>`).join("");
-  $("entry-installment").innerHTML = insts().filter(i => isAdmin() || !S.closed.includes(fy() + "|" + i.key)).map(i => `<option>${i.key}</option>`).join("");
+  renderInstallmentCheckboxes();
   renderAccountOptions();
   $("entry-bank").value = S.bank; syncAmount();
+}
+function renderInstallmentCheckboxes() {
+  const container = $("installment-checkboxes");
+  if (!container) return;
+  const availableInsts = insts().filter(i => isAdmin() || !S.closed.includes(fy() + "|" + i.key));
+  container.innerHTML = availableInsts.map(i =>
+    `<label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded">
+      <input type="checkbox" class="installment-checkbox" value="${i.key}" data-amount="${i.amount}" onchange="syncAmount()">
+      <span>${i.key} (৳${i.amount})</span>
+    </label>`
+  ).join("");
 }
 function accountNumbers() {
   return [...new Set([...DEFAULT_ACCOUNTS, ...S.accounts, ...MEMBERS.map(m => m.accountNo).filter(Boolean)])];
@@ -239,20 +250,61 @@ function handleAccountChange() {
   renderAccountOptions(value);
 }
 function syncAmount() {
-  const i = insts().find(x => x.key === $("entry-installment").value);
-  if (i) $("entry-amount").value = i.amount;
+  const checkboxes = document.querySelectorAll(".installment-checkbox:checked");
+  let totalAmount = 0;
+  checkboxes.forEach(cb => {
+    totalAmount += Number(cb.dataset.amount || 0);
+  });
+  $("entry-amount").value = totalAmount || "";
+}
+function getSelectedInstallments() {
+  const checkboxes = document.querySelectorAll(".installment-checkbox:checked");
+  return Array.from(checkboxes).map(cb => cb.value);
 }
 $("paymentForm").addEventListener("submit", e => {
   e.preventDefault();
   if (!canAccessPage("entry") || (!isAdmin() && $("entry-member").value !== session.mid)) return toast("আপনার Entry করার অনুমতি নেই");
+
+  const selectedInstallments = getSelectedInstallments();
+  if (selectedInstallments.length === 0) return toast("অন্তত একটি কিস্তি Select করুন");
+
   const mid = isAdmin() ? $("entry-member").value : session.mid;
-  payments.push({
-    id: Date.now(), fy: fy(), mid, inst: $("entry-installment").value, method: $("entry-method").value,
-    date: $("entry-date").value, amount: Number($("entry-amount").value), account: $("entry-account").value, bank: $("entry-bank").value, comment: $("entry-comment").value,
-    status: "Draft", submittedBy: isAdmin() ? "admin" : session.mid
+  const method = $("entry-method").value;
+  const date = $("entry-date").value;
+  const totalAmount = Number($("entry-amount").value);
+  const account = $("entry-account").value;
+  const bank = $("entry-bank").value;
+  const comment = $("entry-comment").value;
+  const submittedBy = isAdmin() ? "admin" : session.mid;
+
+  // প্রতিটি selected installment এর জন্য আলাদা payment entry তৈরি করা
+  const timestamp = Date.now();
+  selectedInstallments.forEach((instKey, index) => {
+    const inst = insts().find(i => i.key === instKey);
+    if (!inst) return;
+
+    payments.push({
+      id: timestamp + index,
+      fy: fy(),
+      mid,
+      inst: instKey,
+      method,
+      date,
+      amount: inst.amount,
+      account,
+      bank,
+      comment: comment + (selectedInstallments.length > 1 ? ` (${selectedInstallments.join(", ")} একসাথে)` : ""),
+      status: "Draft",
+      submittedBy
+    });
   });
-  save(); e.target.reset(); renderEntryOptions(); fillAccount(); refreshAll();
-  toast("Draft হিসেবে জমা হয়েছে — Admin approve করলে Final হবে");
+
+  save();
+  e.target.reset();
+  renderEntryOptions();
+  fillAccount();
+  refreshAll();
+  toast(`${selectedInstallments.length} টি কিস্তির জন্য Draft হিসেবে জমা হয়েছে — Admin approve করলে Final হবে`);
 });
 
 // ---------- Approvals ----------
