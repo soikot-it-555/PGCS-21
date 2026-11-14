@@ -15,7 +15,9 @@
   const SETTINGS_KEY = "pgcs_settings_v1";
   const PW_KEY = "pgcs_passwords_v1";
   const PAY_KEY = "pgcs_payments_v3";
-  const STATE_KEYS = [MEMBERS_KEY, SETTINGS_KEY, PW_KEY];
+  const FIN_CFG_KEY = "pgcs_fin_cfg_v1";   // Financial Statement configuration (accounts)
+  const FIN_TX_KEY = "pgcs_fin_tx_v1";     // লেনদেন: fin_transactions table-এ প্রতিটি আলাদা row
+  const STATE_KEYS = [MEMBERS_KEY, SETTINGS_KEY, PW_KEY, FIN_CFG_KEY];
   const UPSERT = { Prefer: "resolution=merge-duplicates,return=minimal" };
 
   // sb_publishable_ key JWT নয়, তাই Authorization: Bearer হিসেবে পাঠানো যাবে না (শুধু apikey)
@@ -31,6 +33,7 @@
   let ready = false;
   let lastPay = new Map(); // payment id -> JSON string (সর্বশেষ যা Database-এ আছে বলে জানি)
   let lastPw = {};
+  let lastFin = new Map();
   let chain = Promise.resolve(true);
 
   // ---------- REST helper ----------
@@ -92,6 +95,47 @@
     lastPay = next;
   }
 
+  // ---------- Financial transactions: payments-এর মতোই row-ভিত্তিক (দুজন একসাথে যোগ করলেও কারও লেনদেন মুছবে না) ----------
+  async function fetchFinTx() {
+    const out = [];
+    for (let off = 0; ; off += 1000) {
+      const rows = await api("fin_transactions?select=id,data&order=updated_at.asc&limit=1000&offset=" + off);
+      out.push(...rows);
+      if (rows.length < 1000) break;
+    }
+    return out;
+  }
+  async function pushFinTx(str) {
+    let arr; try { arr = JSON.parse(str); } catch { return; }
+    if (!Array.isArray(arr)) return;
+    const next = new Map(arr.map(t => [String(t.id), JSON.stringify(t)]));
+    const up = [], del = [], now = new Date().toISOString();
+    for (const [id, s] of next) if (lastFin.get(id) !== s) up.push({ id, data: JSON.parse(s), updated_at: now });
+    for (const id of lastFin.keys()) if (!next.has(id)) del.push(id);
+    for (let i = 0; i < up.length; i += 100)
+      await api("fin_transactions?on_conflict=id", { method: "POST", headers: UPSERT, body: up.slice(i, i + 100) });
+    for (let i = 0; i < del.length; i += 50)
+      await api("fin_transactions?id=in.(" + del.slice(i, i + 50).map(x => '"' + x + '"').join(",") + ")", { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    lastFin = next;
+  }
+
+  // ---------- Supporting documents: Supabase Storage (private bucket "fin-docs") ----------
+  const BUCKET = "fin-docs";
+  const encPath = p => p.split("/").map(encodeURIComponent).join("/");
+  async function storage(path, opts = {}) {
+    let res;
+    try { res = await fetch(SUPABASE_URL + "/storage/v1/" + path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } }); }
+    catch (e) { throw new Error("Network error: ইন্টারনেট সংযোগ চেক করুন"); }
+    if (!res.ok) throw new Error("Storage " + res.status + ": " + (await res.text()).slice(0, 160));
+    return res.json().catch(() => ({}));
+  }
+  const upload = (path, file) => storage("object/" + BUCKET + "/" + encPath(path), { method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" } });
+  async function signedUrl(path, name, download) {
+    const r = await storage("object/sign/" + BUCKET + "/" + encPath(path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn: 300 }) });
+    return SUPABASE_URL + "/storage/v1" + r.signedURL + (download ? "&download=" + encodeURIComponent(name || "") : "");
+  }
+  const removeFiles = paths => paths.length ? storage("object/" + BUCKET, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: paths }) }) : Promise.resolve();
+
   // ---------- Passwords: দুজন একসাথে বদলালেও একজনেরটা মুছবে না (merge) ----------
   async function pushPasswords(str) {
     const next = JSON.parse(str) || {};
@@ -120,6 +164,7 @@
       try {
         if (key === PAY_KEY) await pushPayments(str);
         else if (key === PW_KEY) await pushPasswords(str);
+        else if (key === FIN_TX_KEY) await pushFinTx(str);
         else await upsertState(key, JSON.parse(str));
         banner("");
         return true;
@@ -134,7 +179,7 @@
   // app.js যে localStorage.setItem ডাকে, সেটিকে আটকে Supabase-এও পাঠানো
   Storage.prototype.setItem = function (k, v) {
     origSet.call(this, k, v);
-    if (this === ls && ready && (k === PAY_KEY || STATE_KEYS.includes(k))) enqueue(k, String(v));
+    if (this === ls && ready && (k === PAY_KEY || k === FIN_TX_KEY || STATE_KEYS.includes(k))) enqueue(k, String(v));
   };
 
   // ---------- Retry helper ----------
@@ -174,6 +219,9 @@
       Promise.all([api("app_state?select=key,value"), fetchAllPayments()])
     );
     const sm = new Map(state.map(r => [r.key, r.value]));
+    let finRows = [], finTableOk = true;
+    try { finRows = await fetchFinTx(); }
+    catch (e) { finTableOk = false; console.warn("fin_transactions table পাওয়া যায়নি — supabase-setup.sql-এর ৬ ও ৭ নম্বর অংশ Run করুন:", e.message); }
 
     if (!sm.has("_initialized")) {
       // First time: load this browser data (or Excel master data if not present) into Databasease-এ তোলা হবে
@@ -187,6 +235,7 @@
         if (raw) await upsertState(k, JSON.parse(raw));
       }
       lastPw = JSON.parse(ls.getItem(PW_KEY) || "{}");
+      if (finTableOk && ls.getItem(FIN_TX_KEY)) await pushFinTx(ls.getItem(FIN_TX_KEY));
       await upsertState("_initialized", { at: new Date().toISOString() });
     } else {
       // পরের বার থেকে: Database-ই একমাত্র সত্য, local শুধু cache
@@ -198,9 +247,15 @@
       rawSet(PAY_KEY, JSON.stringify(arr));
       lastPay = new Map(arr.map(p => [p.id, JSON.stringify(p)]));
       lastPw = sm.get(PW_KEY) || {};
+      if (finTableOk) {
+        const ft = finRows.map(r => r.data);
+        rawSet(FIN_TX_KEY, JSON.stringify(ft));
+        lastFin = new Map(ft.map(t => [String(t.id), JSON.stringify(t)]));
+      }
     }
+    window.DB_FIN_READY = finTableOk;
     ready = true;
   }
 
-  window.DB = { init, flush: () => chain };
+  window.DB = { init, flush: () => chain, upload, signedUrl, removeFiles };
 })();

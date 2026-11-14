@@ -167,7 +167,8 @@ function renderStats() {
 
 function renderMembers() {
   const q = $("search-member").value.toLowerCase();
-  const list = MEMBERS.filter(m => m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q));
+  const showCancelled = $("filter-status").value === "CANCELLED";   // Cancelled সদস্য শুধু এই filter-এ দেখাবে
+  const list = MEMBERS.filter(m => (showCancelled ? m.status !== "Active" : m.status === "Active") && (m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q)));
 
   // শুধু admin-এ unchecked নয় এমন installments দেখাবো
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
@@ -725,6 +726,7 @@ function exportDashboardTablePDF() {
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
   const filteredMembers = MEMBERS.filter(m => {
+    if ((filterStatus === "CANCELLED") ? m.status === "Active" : m.status !== "Active") return false;
     if (q && !(m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q))) return false;
 
     let total = 0, due = 0, draft = 0;
@@ -870,10 +872,11 @@ function renderAdmin() {
   $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>Name</th><th>Account No</th><th>Mobile</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th></th></tr>` +
     MEMBERS.map(m => `<tr class="border-b"><td class="p-2 font-mono">${m.mid}</td><td>${inp(m.mid, "name", m.name, "w-44")}</td><td>${inp(m.mid, "accountNo", m.accountNo)}</td><td>${inp(m.mid, "mobile", m.mobile)}</td><td>${inp(m.mid, "role", m.role, "w-40")}</td>
       <td><select class="border rounded p-1" onchange="setAccessRole('${m.mid}',this.value)">${Object.entries(ACCESS_ROLES).map(([value, label]) => `<option value="${value}" ${accessRole(m) === value ? "selected" : ""}>${label}</option>`).join("")}</select></td>
-      <td><select class="border rounded p-1" onchange="updMember('${m.mid}','status',this.value)"><option ${m.status === "Active" ? "selected" : ""}>Active</option><option ${m.status === "Withdrawn" ? "selected" : ""}>Withdrawn</option></select></td>
+      <td><select class="border rounded p-1" onchange="updMember('${m.mid}','status',this.value)"><option ${m.status === "Active" ? "selected" : ""}>Active</option><option ${m.status === "Withdrawn" ? "selected" : ""}>Withdrawn</option></select>${m.cancelDate ? `<div class="text-[10px] text-slate-500">Cancelled: ${m.cancelDate}</div>` : ""}</td>
       <td><input type="text" class="border rounded p-1 w-32 font-mono" value="${(pw[m.mid] || DEFAULT_MEMBER_PASS).replace(/"/g, "&quot;")}" onchange="editPw('${m.mid}',this.value)"></td>
       <td><label><input type="checkbox" ${m.loginOff ? "" : "checked"} onchange="updMember('${m.mid}','loginOff',!this.checked)"> Login</label></td>
       <td><button class="text-rose-600" onclick="delMember('${m.mid}')">Delete</button></td></tr>`).join("");
+  if (typeof renderFinConfig === "function") renderFinConfig();
 }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
 function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); refreshAll(); }
@@ -942,7 +945,7 @@ function deleteInstallment(key) {
   }
 }
 function updMember(mid, f, v) {
-  if (!["name", "accountNo", "role", "status", "loginOff", "mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"].includes(f)) return;
+  if (!["name", "accountNo", "role", "status", "loginOff", "mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress", "cancelDate"].includes(f)) return;
 if (!isAdmin() && !["mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"].includes(f)) return;
   const m = member(mid);
   if (!m) return toast("সদস্য পাওয়া যায়নি");
@@ -950,6 +953,17 @@ if (!isAdmin() && !["mobile", "nominee", "nomineeRelation", "nomineeNID", "prese
     renderAdmin();
     return toast("একমাত্র Admin (IT)-এর Login বন্ধ করা যাবে না");
   }
+  if (f === "status") {                       // সদস্যপদ বাতিল / পুনরায় সক্রিয়
+    if (v === "Withdrawn" && m.status !== "Withdrawn") {
+      const dt = prompt("সদস্যপদ বাতিলের তারিখ (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
+      if (!dt || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) { renderAdmin(); return toast("বাতিল করা হয়নি — সঠিক তারিখ দিন"); }
+      if (!confirm(m.name + " (" + mid + ")-এর সদস্যপদ " + dt + " তারিখে বাতিল হবে। Dashboard ও Payment Entry থেকে সরে যাবে; ইতিহাস থাকবে। নিশ্চিত?")) { renderAdmin(); return; }
+      m.cancelDate = dt;
+    } else if (v === "Active" && typeof finSettleDate === "function" && finSettleDate(mid)) {
+      renderAdmin(); return toast("Final Settlement হয়ে গেছে — আর সক্রিয় করা যাবে না");
+    } else if (v === "Active") delete m.cancelDate;
+  }
+  if (f === "cancelDate" && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
   m[f] = v; saveMembers(); refreshAll();
 }
 function setAccessRole(mid, role) {
@@ -1052,7 +1066,7 @@ function startApp() {
   $("fy-select").innerHTML = Object.keys(YEARS).reverse().map(y => `<option>${y}</option>`).join("");
   const opts = () => insts().map(i => `<option>${i.key}</option>`).join("");
   $("fy-select").onchange = () => { renderEntryOptions(); $("report-month-select").innerHTML = opts(); syncAmount(); refreshAll(); };
-  $("entry-member").innerHTML = (isAdmin() ? MEMBERS : [member(session.mid)]).map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");
+  $("entry-member").innerHTML = (isAdmin() ? MEMBERS.filter(m => m.status === "Active") : [member(session.mid)]).map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");
   $("entry-member").disabled = !isAdmin(); $("entry-member").onchange = fillAccount;
   $("entry-account").onchange = handleAccountChange;
   $("report-member-select").innerHTML = MEMBERS.map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");

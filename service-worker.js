@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgcs-portal-v5";
+const CACHE_NAME = "pgcs-portal-v6";
 const BASE_URL = new URL("./", self.location.href);
 const APP_FILES = [
   "",

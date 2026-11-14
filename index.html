@@ -81,7 +81,7 @@
         <input id="search-member" oninput="renderMembers()" placeholder="Search by Name or MID..." class="border rounded-lg px-4 py-2 text-sm ml-auto w-64" />
         <select id="filter-status" onchange="renderMembers()" class="border rounded-lg px-3 py-2 text-sm bg-white">
           <option value="ALL">All Members</option><option value="DUE">Only Due</option>
-          <option value="DRAFT">Only Draft</option><option value="FULL">Payment Full (No Due)</option></select>
+          <option value="DRAFT">Only Draft</option><option value="CANCELLED">Cancelled Members</option><option value="FULL">Payment Full (No Due)</option></select>
       </div>
       <p class="text-xs text-slate-500 mb-2">Installments due after the 25th of each month <span class="chip bg-rose-100 text-rose-700">Due</span> দেখাবে। Draft = Admin approve করেনি।</p>
       <div class="bg-white rounded-xl border overflow-x-auto">
@@ -171,6 +171,7 @@
       <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">কিস্তি / Installment — Edit & New Entry</h3><div id="admin-inst"></div></div>
       <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Members & Login (Username = MID)</h3><div id="admin-add"></div>
         <div class="overflow-x-auto mt-4"><table class="w-full text-xs text-left" id="admin-users"></table></div></div>
+      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-1">Financial Statement Configuration</h3><p class="text-xs text-slate-500 mb-3">Income / Expense / Asset / Liability / Equity item যোগ, নাম বদল, Active-Inactive ও ক্রম নিয়ন্ত্রণ (শুধু Admin (IT))।</p><div id="admin-fincfg"></div></div>
       <div class="bg-white rounded-xl border p-5"><h3 class="font-bold mb-3">Database Backup & Restore</h3><div id="admin-backup"></div></div>
     </section>
 
