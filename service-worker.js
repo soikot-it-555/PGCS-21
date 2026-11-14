@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgcs-portal-v4";
+const CACHE_NAME = "pgcs-portal-v5";
 const BASE_URL = new URL("./", self.location.href);
 const APP_FILES = [
   "",
@@ -8,6 +8,7 @@ const APP_FILES = [
   "db.js",
   "assets.js",
   "app.js",
+  "finance.js",
   "manifest.json",
   "Pictures/PGCS-21_Logo.png",
   "Pictures/Letter_Head.png",

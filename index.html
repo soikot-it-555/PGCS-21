@@ -48,6 +48,7 @@
       <button onclick="showPage('member-detail')" id="nav-member-detail" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">👤 Members' Detail</button>
       <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">✅ <span id="nav-approvals-label">Approvals</span></button>
       <button onclick="showPage('admin')" id="nav-admin" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">🛠 Admin (IT)</button>
+      <button onclick="showPage('financial')" id="nav-financial" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">💰 Financial Statement</button>
       <button onclick="showPage('reports')" id="nav-reports" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📄 Reports</button>
     </nav>
     <div class="p-3 md:p-4 border-t border-slate-800 text-xs text-slate-400 space-y-2">
@@ -173,6 +174,9 @@
       <div class="bg-white rounded-xl border p-5"><h3 class="font-bold mb-3">Database Backup & Restore</h3><div id="admin-backup"></div></div>
     </section>
 
+    <!-- Financial Statement -->
+    <section id="page-financial" class="page-section hidden"><div id="fin-root"></div></section>
+
     <!-- Reports -->
     <section id="page-reports" class="page-section hidden">
       <h2 class="text-2xl font-bold mb-4">Reports</h2>
@@ -217,7 +221,7 @@
     try {
       st.textContent = "অনলাইন Database থেকে ডেটা লোড হচ্ছে...";
       await DB.init();
-      for (const src of ["assets.js", "app.js"]) {
+      for (const src of ["assets.js", "app.js", "finance.js"]) {
         await new Promise((ok, no) => {
           const s = document.createElement("script");
           s.src = src; s.async = false; s.onload = ok;

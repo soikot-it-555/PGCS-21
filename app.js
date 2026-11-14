@@ -36,9 +36,9 @@ const currentRole = () => session?.role;
 const isAdmin = () => currentRole() === "adminIT";
 const isApprover = () => isAdmin() || currentRole() === "admin";
 const canAccessPage = page => ({
-  adminIT: ["dashboard", "entry", "approvals", "admin", "reports", "member-detail"],
-  admin: ["dashboard", "entry", "approvals", "reports", "member-detail"],
-  member: ["dashboard", "entry", "reports", "member-detail"]
+  adminIT: ["dashboard", "entry", "approvals", "admin", "reports", "member-detail", "financial"],
+  admin: ["dashboard", "entry", "approvals", "reports", "member-detail", "financial"],
+  member: ["dashboard", "entry", "reports", "member-detail", "financial"]
 }[currentRole()] || []).includes(page);
 const fmt = n => "৳ " + Number(n).toLocaleString("en-IN");
 const member = mid => MEMBERS.find(m => m.mid === mid);
@@ -827,6 +827,7 @@ function showPage(id) {
   $("page-" + id).classList.remove("hidden");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
   $("nav-" + id).classList.add("active");
+  if (id === "financial" && typeof renderFinance === "function") renderFinance();
   if (id === "member-detail") {
     renderMemberDetail();
     const role = currentRole();
@@ -1029,7 +1030,7 @@ function delMember(mid) {
   if (payments.some(p => p.mid === mid)) return toast("Payment থাকা সদস্য মোছা যাবে না — Status 'Withdrawn' করুন");
   if (confirm(mid + " মুছবেন?")) { MEMBERS.splice(MEMBERS.findIndex(m => m.mid === mid), 1); saveMembers(); refreshAll(); }
 }
-function refreshAll() { renderStats(); renderMembers(); renderApprovals(); renderAdmin(); }
+function refreshAll() { renderStats(); renderMembers(); renderApprovals(); renderAdmin(); if (typeof renderFinance === "function" && !$("page-financial").classList.contains("hidden")) renderFinance(); }
 
 function startApp() {
   const currentMember = member(session?.mid);
