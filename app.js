@@ -972,14 +972,54 @@ function renderAdmin() {
 }
 function renderPaymentManagement() {
   const box = $("admin-payments"); if (!box || !isAdmin()) return;
+  if (!box.dataset.pmBound) {
+    const rerender = event => {
+      const target = event.target;
+      if (!target.matches("[data-pm-q], [data-pm-year], [data-pm-inst], [data-pm-status], [data-pm-date]")) return;
+      const isSearch = target.matches("[data-pm-q]");
+      const isDate = target.matches("[data-pm-date]");
+      const focusKey = isSearch ? "[data-pm-q]" : isDate ? "[data-pm-date]" : target.matches("[data-pm-year]") ? "[data-pm-year]" : target.matches("[data-pm-inst]") ? "[data-pm-inst]" : "[data-pm-status]";
+      const caret = isSearch ? target.selectionStart : null;
+      renderPaymentManagement();
+      const next = box.querySelector(focusKey);
+      if (next) {
+        // Replacing the table HTML during the input event can otherwise let the
+        // browser restore focus to the old, detached input after this handler.
+        setTimeout(() => {
+          const current = box.querySelector(focusKey);
+          if (!current) return;
+          current.focus({ preventScroll: true });
+          if (caret !== null && typeof current.setSelectionRange === "function") {
+            const position = Math.min(caret, current.value.length);
+            current.setSelectionRange(position, position);
+          }
+        }, 0);
+      }
+    };
+    box.addEventListener("input", event => {
+      if (event.target.matches("[data-pm-q], [data-pm-date]")) rerender(event);
+    });
+    box.addEventListener("change", event => {
+      if (event.target.matches("[data-pm-year], [data-pm-inst], [data-pm-status], [data-pm-date]")) rerender(event);
+    });
+    box.dataset.pmBound = "true";
+  }
   const q = (box.querySelector("[data-pm-q]")?.value || "").toLowerCase();
   const status = box.querySelector("[data-pm-status]")?.value || "ALL";
   const year = box.querySelector("[data-pm-year]")?.value || "ALL";
   const installment = box.querySelector("[data-pm-inst]")?.value || "ALL";
   const date = box.querySelector("[data-pm-date]")?.value || "";
-  const list = payments.filter(p => { const m = member(p.mid); const hay = `${p.id} ${p.mid} ${m?.name || ""} ${p.inst}`.toLowerCase(); return (!q || hay.includes(q)) && (status === "ALL" || p.status === status) && (year === "ALL" || p.fy === year) && (installment === "ALL" || p.inst === installment) && (!date || p.date === date); });
-  box.innerHTML = `<div class="flex flex-wrap gap-2 mb-3"><input data-pm-q class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" placeholder="Search MID, Member, Payment ID..." value="${q}"><select data-pm-year class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Financial Years</option>${Object.keys(YEARS).map(y => `<option ${year === y ? "selected" : ""}>${y}</option>`).join("")}</select><select data-pm-inst class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Installments</option>${[...new Set(payments.map(p => p.inst))].sort().map(x => `<option ${installment === x ? "selected" : ""}>${x}</option>`).join("")}</select><select data-pm-status class="border rounded-lg px-3 py-2 text-sm">${["ALL", "Draft", "Approved", "Rejected", "Voided"].map(x => `<option ${status === x ? "selected" : ""}>${x === "ALL" ? "All Statuses" : x}</option>`).join("")}</select><input data-pm-date type="date" class="border rounded-lg px-3 py-2 text-sm" value="${date}"></div><div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr><th class="p-2">SL</th><th>Financial Year</th><th>MID</th><th>Member Name</th><th>Installment</th><th>Payment Date</th><th>Amount (BDT)</th><th>Payment Method</th><th>Status</th><th>Action</th></tr></thead><tbody>${list.map((p, n) => `<tr class="border-b"><td class="p-2">${n + 1}</td><td>${p.fy}</td><td class="font-mono">${p.mid}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date || "-"}</td><td>${fmt(p.amount)}</td><td>${p.method || "-"}</td><td>${statusChip(p.status)}</td><td>${p.status !== "Voided" ? `<button class="text-rose-600 underline" onclick="voidPayment(${p.id})">Void/Delete</button>` : `<span class="text-slate-500">${p.voidReason || "Voided"}</span>`}</td></tr>`).join("") || `<tr><td colspan="10" class="p-4 text-center text-slate-500">No payments found</td></tr>`}</tbody></table></div>`;
-  box.querySelectorAll("input,select").forEach(el => el.addEventListener("input", () => renderPaymentManagement()));
+  const list = payments.filter(p => {
+    const m = member(p.mid);
+    const memberName = m?.name || p.memberName || "";
+    const hay = `${p.id} ${p.mid} ${memberName} ${p.inst} ${p.method || ""} ${p.status || ""} ${p.fy || ""}`.toLocaleLowerCase();
+    const selectedInstallment = installment === "ALL" || p.inst === installment || p.instId === installment;
+    return (!q || hay.includes(q)) && (status === "ALL" || p.status === status) && (year === "ALL" || p.fy === year) && selectedInstallment && (!date || (p.date || "") === date);
+  });
+  const installmentOptions = [...new Map(payments.map(p => [p.instId || p.inst, p.instId ? `${p.instId} — ${p.inst}` : p.inst])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  const escValue = value => String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  box.innerHTML = `<div class="flex flex-wrap gap-2 mb-3"><input data-pm-q data-pm-search class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" placeholder="Search MID, Member, Payment ID, installment..." value="${escValue(q)}"><select data-pm-year class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Financial Years</option>${Object.keys(YEARS).map(y => `<option value="${escValue(y)}" ${year === y ? "selected" : ""}>${escValue(y)}</option>`).join("")}</select><select data-pm-inst class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Installments</option>${installmentOptions.map(([value, label]) => `<option value="${escValue(value)}" ${installment === value ? "selected" : ""}>${escValue(label)}</option>`).join("")}</select><select data-pm-status class="border rounded-lg px-3 py-2 text-sm">${["ALL", "Draft", "Approved", "Rejected", "Voided"].map(x => `<option value="${x}" ${status === x ? "selected" : ""}>${x === "ALL" ? "All Statuses" : x}</option>`).join("")}</select><input data-pm-date type="date" class="border rounded-lg px-3 py-2 text-sm" value="${escValue(date)}"><button type="button" data-pm-clear class="border rounded-lg px-3 py-2 text-sm hover:bg-slate-100">Clear</button></div><div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr><th class="p-2">SL</th><th>Financial Year</th><th>MID</th><th>Member Name</th><th>Installment</th><th>Payment Date</th><th>Amount (BDT)</th><th>Payment Method</th><th>Status</th><th>Action</th></tr></thead><tbody>${list.map((p, n) => `<tr class="border-b"><td class="p-2">${n + 1}</td><td>${p.fy}</td><td class="font-mono">${p.mid}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date || "-"}</td><td>${fmt(p.amount)}</td><td>${p.method || "-"}</td><td>${statusChip(p.status)}</td><td>${p.status !== "Voided" ? `<button class="text-rose-600 underline" onclick="voidPayment(${p.id})">Void/Delete</button>` : `<span class="text-slate-500">${p.voidReason || "Voided"}</span>`}</td></tr>`).join("") || `<tr><td colspan="10" class="p-4 text-center text-slate-500">No payments found</td></tr>`}</tbody></table></div>`;
+  box.querySelector("[data-pm-clear]").addEventListener("click", () => { box.querySelector("[data-pm-q]").value = ""; box.querySelector("[data-pm-year]").value = "ALL"; box.querySelector("[data-pm-inst]").value = "ALL"; box.querySelector("[data-pm-status]").value = "ALL"; box.querySelector("[data-pm-date]").value = ""; renderPaymentManagement(); });
 }
 function addMonthsDate(start, month) { const d = new Date(start + "T00:00:00"); d.setMonth(d.getMonth() + month); return d; }
 function renderIncomeYearManagement() {
