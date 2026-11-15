@@ -167,12 +167,23 @@
     <!-- Admin (IT) -->
     <section id="page-admin" class="page-section hidden">
       <h2 class="text-2xl font-bold mb-4">Admin (IT) Control Panel</h2>
-      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Enable Entry Form for Members</h3><div id="admin-entry"></div></div>
-      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">কিস্তি / Installment — Edit & New Entry</h3><div id="admin-inst"></div></div>
-      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Members & Login (Username = MID)</h3><div id="admin-add"></div>
+      <nav id="admin-subnav" class="bg-white rounded-xl border p-2 mb-5 flex gap-2 overflow-x-auto sticky top-2 z-20" aria-label="Admin (IT) sections">
+        <button type="button" class="admin-subnav-btn active" data-admin-target="admin-entry-section" onclick="adminNavigate('admin-entry-section', this)">Entry Settings</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-payments-section" onclick="adminNavigate('admin-payments-section', this)">Payment Management</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-years-section" onclick="adminNavigate('admin-years-section', this)">Income Years</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-installments-section" onclick="adminNavigate('admin-installments-section', this)">Installments</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-members-section" onclick="adminNavigate('admin-members-section', this)">Members & Login</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-finance-section" onclick="adminNavigate('admin-finance-section', this)">Financial Statement Configuration</button>
+        <button type="button" class="admin-subnav-btn" data-admin-target="admin-backup-section" onclick="adminNavigate('admin-backup-section', this)">Backup & Restore</button>
+      </nav>
+      <div id="admin-entry-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Enable Entry Form for Members</h3><div id="admin-entry"></div></div>
+      <div id="admin-payments-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Payment Management</h3><div id="admin-payments"></div></div>
+      <div id="admin-years-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Income Year Management</h3><div id="admin-years"></div></div>
+      <div id="admin-installments-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">কিস্তি / Installment — Edit & New Entry</h3><div id="admin-inst"></div></div>
+      <div id="admin-members-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Members & Login (Username = MID)</h3><div id="admin-add"></div>
         <div class="overflow-x-auto mt-4"><table class="w-full text-xs text-left" id="admin-users"></table></div></div>
-      <div class="bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-1">Financial Statement Configuration</h3><p class="text-xs text-slate-500 mb-3">Income / Expense / Asset / Liability / Equity item যোগ, নাম বদল, Active-Inactive ও ক্রম নিয়ন্ত্রণ (শুধু Admin (IT))।</p><div id="admin-fincfg"></div></div>
-      <div class="bg-white rounded-xl border p-5"><h3 class="font-bold mb-3">Database Backup & Restore</h3><div id="admin-backup"></div></div>
+      <div id="admin-finance-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-1">Financial Statement Configuration</h3><p class="text-xs text-slate-500 mb-3">Income / Expense / Asset / Liability / Equity item যোগ, নাম বদল, Active-Inactive ও ক্রম নিয়ন্ত্রণ (শুধু Admin (IT))।</p><div id="admin-fincfg"></div></div>
+      <div id="admin-backup-section" class="admin-section bg-white rounded-xl border p-5"><h3 class="font-bold mb-3">Database Backup & Restore</h3><div id="admin-backup"></div></div>
     </section>
 
     <!-- Financial Statement -->

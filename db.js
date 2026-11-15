@@ -28,6 +28,8 @@
   const PAY_KEY = "pgcs_payments_v3";
   const FIN_CFG_KEY = "pgcs_fin_cfg_v1";
   const FIN_TX_KEY = "pgcs_fin_tx_v1";
+  const INCOME_YEARS_KEY = "pgcs_income_years_v1";
+  const PAYMENT_AUDIT_KEY = "pgcs_payment_audit_v1";
   const OUTBOX_KEY = "pgcs_outbox_v1";
 
   const configured = !/YOUR-/.test(SUPABASE_URL + SUPABASE_KEY);
@@ -118,7 +120,9 @@
     members: { kind: "doc", key: MEMBERS_KEY, lsKey: MEMBERS_KEY, form: "list", idOf: o => o.mid, label: "Member" },
     settings: { kind: "doc", key: SETTINGS_KEY, lsKey: SETTINGS_KEY, form: "obj", deep: ["amt"], label: "Setting" },
     passwords: { kind: "doc", key: PW_KEY, lsKey: PW_KEY, form: "obj", label: "Password" },
-    finCfg: { kind: "doc", key: FIN_CFG_KEY, lsKey: FIN_CFG_KEY, form: "cfg", label: "Financial configuration" }
+    finCfg: { kind: "doc", key: FIN_CFG_KEY, lsKey: FIN_CFG_KEY, form: "cfg", label: "Financial configuration" },
+    incomeYears: { kind: "doc", key: INCOME_YEARS_KEY, lsKey: INCOME_YEARS_KEY, form: "list", idOf: o => String(o.id), label: "Income year" },
+    paymentAudit: { kind: "doc", key: PAYMENT_AUDIT_KEY, lsKey: PAYMENT_AUDIT_KEY, form: "list", idOf: o => String(o.id), label: "Payment audit" }
   };
   const DOC_BY_KEY = {};
   for (const [n, d] of Object.entries(DEFS)) if (d.kind === "doc") DOC_BY_KEY[d.key] = n;
@@ -503,7 +507,7 @@
       const seed = {
         payments: jl(PAY_KEY, typeof INITIAL_PAYMENTS !== "undefined" ? INITIAL_PAYMENTS : []),
         members: jl(MEMBERS_KEY, typeof MEMBERS !== "undefined" ? MEMBERS : null),
-        settings: jl(SETTINGS_KEY, null), passwords: jl(PW_KEY, null), finCfg: jl(FIN_CFG_KEY, null), finTx: jl(FIN_TX_KEY, [])
+        settings: jl(SETTINGS_KEY, null), passwords: jl(PW_KEY, null), finCfg: jl(FIN_CFG_KEY, null), incomeYears: jl(INCOME_YEARS_KEY, null), paymentAudit: jl(PAYMENT_AUDIT_KEY, []), finTx: jl(FIN_TX_KEY, [])
       };
       ready = true;
       for (const [n, v] of Object.entries(seed)) if (v) colls[n].onLocal(JSON.stringify(v));

@@ -8,6 +8,7 @@ const ACCESS_ROLES = {
 const DEFAULT_IT_MID = "PGCS-2105";
 const DUE_DAY = 25;
 const MKEY = "pgcs_members_v1", SKEY = "pgcs_settings_v1";
+const IYKEY = "pgcs_income_years_v1", PAKEY = "pgcs_payment_audit_v1";
 const DEFAULT_ACCOUNTS = [
   "2914100000145", "2914010013209", "2914010013896", "0314010032207",
   "2914010014942", "2914010013220", "2914010013261", "2914010014958",
@@ -19,6 +20,25 @@ const _sm = localStorage.getItem(MKEY); if (_sm) { MEMBERS.length = 0; MEMBERS.p
 const S = Object.assign({ formOpen: true, methods: ["Magpie-Fund Transfer", "BEFTN", "NPSB", "Cash Payment"], bank: "BASIC Bank PLC", closed: [], amt: {}, accounts: [] }, JSON.parse(localStorage.getItem(SKEY) || "{}"));
 const saveMembers = () => localStorage.setItem(MKEY, JSON.stringify(MEMBERS));
 const saveS = () => localStorage.setItem(SKEY, JSON.stringify(S));
+const saveIncomeYears = () => localStorage.setItem(IYKEY, JSON.stringify(incomeYears));
+const savePaymentAudit = () => localStorage.setItem(PAKEY, JSON.stringify(paymentAudit));
+let incomeYears = JSON.parse(localStorage.getItem(IYKEY) || "[]");
+let paymentAudit = JSON.parse(localStorage.getItem(PAKEY) || "[]");
+function slugId(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "installment"; }
+function legacyIncomeYears() {
+  return Object.entries(YEARS).map(([name, list]) => ({ id: "iy-" + slugId(name), name, startDate: list.filter(i => /^\d/.test(i.due)).map(i => i.due).sort()[0] || `${name.slice(0, 4)}-07-01`, endDate: list.filter(i => /^\d/.test(i.due)).map(i => i.due).sort().pop() || `${Number(name.slice(0, 4)) + 1}-06-30`, defaultAmount: Number(list.find(i => i.key !== "Membership Fee")?.amount || 2000), dueDay: DUE_DAY, status: "Active", installments: list.map((i, n) => ({ id: `${slugId(name)}-${n + 1}`, name: i.key, dueDate: i.due, amount: Number(i.amount || 0), status: "Active", legacyKey: i.key })) }));
+}
+function refreshYearsFromModel() {
+  if (!Array.isArray(incomeYears) || !incomeYears.length) { incomeYears = legacyIncomeYears(); saveIncomeYears(); }
+  for (const key of Object.keys(YEARS)) delete YEARS[key];
+  incomeYears.filter(y => y.status !== "Inactive").forEach(y => { YEARS[y.name] = (y.installments || []).map(i => ({ key: i.legacyKey || i.name, id: i.id, name: i.name, due: i.dueDate, amount: Number(i.amount || y.defaultAmount || 0), status: i.status || "Active" })); });
+}
+function syncModelYearFromLegacy(year) {
+  const list = YEARS[year] || [], y = incomeYears.find(x => x.name === year);
+  if (!y) return;
+  y.installments = list.map((i, n) => { const old = (y.installments || []).find(x => x.id === i.id || x.legacyKey === i.key || x.name === i.key); return { id: old?.id || `${y.id}-${n + 1}`, name: i.name || i.key, legacyKey: i.key, dueDate: i.due, amount: Number(i.amount || 0), status: i.status || "Active" }; });
+}
+refreshYearsFromModel();
 function applyAmounts() { for (const y in YEARS) YEARS[y].forEach(i => { const v = S.amt[y + "|" + i.key]; if (v) i.amount = v; }); }
 applyAmounts();
 const KEY = "pgcs_payments_v3", PWKEY = "pgcs_passwords_v1";
@@ -30,7 +50,47 @@ let chart = null, lastSelectedAccount = "", personalEditMode = false;
 const save = () => localStorage.setItem(KEY, JSON.stringify(payments));
 const $ = id => document.getElementById(String(id).replace(/^#/, ""));
 const fy = () => $("fy-select").value;
-const insts = () => YEARS[fy()];
+const insts = () => YEARS[fy()] || [];
+const allInstallments = () => {
+  const seen = new Set();
+  return incomeYears.flatMap(y => (y.installments || []).filter(i => i.status !== "Inactive").map(i => ({ ...i, fy: y.name, incomeYearId: y.id, key: i.legacyKey || i.name, due: i.dueDate }))).filter(i => {
+    // Legacy and remotely migrated catalogs can contain the same year/name/date
+    // under different generated IDs. Count the logical installment once.
+    const logicalKey = `${i.fy}|${i.key}|${i.due}`;
+    if (seen.has(logicalKey)) return false;
+    seen.add(logicalKey); return true;
+  }).sort((a, b) => String(a.due).localeCompare(String(b.due)));
+};
+const paymentCounts = p => p && p.status === "Approved" && !["Voided", "Deleted", "Rejected", "Draft"].includes(p.status);
+const paymentMatchesInstallment = (p, i) => p && p.mid && p.fy === i.fy && (p.instId === i.id || p.inst === i.key || p.inst === i.name);
+const memberSettlementDate = mid => typeof finSettleDate === "function" ? finSettleDate(mid) : null;
+function receivableRows(asOf = new Date().toISOString().slice(0, 10)) {
+  const rows = MEMBERS.map(m => ({ m, paid: 0, due: 0, per: [], comments: [] }));
+  const byMid = new Map(rows.map(x => [x.m.mid, x]));
+  const paid = new Map();
+  allInstallments().forEach(i => {
+    MEMBERS.forEach(m => {
+      // Approved legacy payments with an empty date are still valid payments;
+      // only an explicitly future-dated payment is excluded from the statement.
+      const iPaid = payments.filter(p => paymentCounts(p) && (!p.date || p.date <= asOf) && p.mid === m.mid && paymentMatchesInstallment(p, i)).reduce((s, p) => s + Number(p.amount || 0), 0);
+      paid.set(`${m.mid}|${i.id}`, iPaid);
+    });
+  });
+  allInstallments().forEach(i => {
+    if (!i.due || i.due > asOf || !i.fy || i.key === "Membership Fee") return;
+    MEMBERS.forEach(m => {
+      const row = byMid.get(m.mid); if (!row) return;
+      const settled = memberSettlementDate(m.mid);
+      if (settled && i.due >= settled) return;
+      if (m.status !== "Active" && (!m.cancelDate || i.due > m.cancelDate)) return;
+      const amount = Math.max(0, Number(i.amount || 0) - (paid.get(`${m.mid}|${i.id}`) || 0));
+      if (!amount) return;
+      row.due += amount; row.per.push({ ...i, outstanding: amount });
+      row.comments.push(`${instLabel(i)} Payment Due (${amount}/-)`);
+    });
+  });
+  return rows.map(r => ({ ...r, due: Math.max(0, r.due), comment: r.comments.join(", ") })).filter(r => r.due > 0);
+}
 const accessRole = m => Object.hasOwn(ACCESS_ROLES, m?.accessRole) ? m.accessRole : m?.mid.toUpperCase() === DEFAULT_IT_MID ? "adminIT" : "member";
 const currentRole = () => session?.role;
 const isAdmin = () => currentRole() === "adminIT";
@@ -77,7 +137,7 @@ function resetData() {
 }
 
 // ---------- Database Backup / Restore (Admin IT only) ----------
-const BACKUP_KEYS = [MKEY, SKEY, KEY, PWKEY];
+const BACKUP_KEYS = [MKEY, SKEY, KEY, PWKEY, IYKEY, PAKEY];
 function downloadDatabaseBackup() {
   if (!isAdmin()) return toast("শুধু Admin (IT) Backup নিতে পারবেন");
   const data = {};
@@ -111,7 +171,7 @@ async function restoreDatabaseBackup(file) {
       parsed[key] = JSON.parse(backup.data[key]);
     }
     if (!Array.isArray(parsed[MKEY]) || !parsed[SKEY] || typeof parsed[SKEY] !== "object" || Array.isArray(parsed[SKEY]) ||
-        !Array.isArray(parsed[KEY]) || !parsed[PWKEY] || typeof parsed[PWKEY] !== "object" || Array.isArray(parsed[PWKEY])) {
+        !Array.isArray(parsed[KEY]) || !parsed[PWKEY] || typeof parsed[PWKEY] !== "object" || Array.isArray(parsed[PWKEY]) || !Array.isArray(parsed[IYKEY]) || !Array.isArray(parsed[PAKEY])) {
       throw new Error("Backup file-এর data format সঠিক নয়");
     }
     if (!confirm("বর্তমান Database-এর সব data Backup file-এর data দিয়ে প্রতিস্থাপিত হবে। Restore করার আগে বর্তমান data-এর Backup নিয়ে রাখুন। আপনি কি নিশ্চিত?")) return;
@@ -128,10 +188,14 @@ async function restoreDatabaseBackup(file) {
 const today = new Date(); today.setHours(0, 0, 0, 0);
 const isPastDue = i => new Date(i.due + "T23:59:59") < new Date();
 const sameMonth = i => i.due.slice(0, 7) === today.toISOString().slice(0, 7);
-const paidOf = (mid, key, st = "Approved") => payments.filter(p => p.fy === fy() && p.mid === mid && p.inst === key && p.status === st).reduce((s, p) => s + p.amount, 0);
+const paidOf = (mid, key, st = "Approved") => {
+  const current = insts().find(i => i.id === key || i.key === key || i.name === key);
+  const keys = new Set([key, current?.id, current?.key, current?.name].filter(Boolean));
+  return payments.filter(p => p.fy === fy() && p.mid === mid && (keys.has(p.inst) || keys.has(p.instId)) && (st === "Approved" ? paymentCounts(p) : p.status === st)).reduce((s, p) => s + Number(p.amount || 0), 0);
+};
 
 function cell(m, i) {
-  const paid = paidOf(m.mid, i.key), draft = paidOf(m.mid, i.key, "Draft"), left = Math.max(0, i.amount - paid);
+  const paid = paidOf(m.mid, i.id || i.key), draft = paidOf(m.mid, i.id || i.key, "Draft"), left = Math.max(0, Number(i.amount || 0) - paid);
   let due = 0, html;
   if (paid >= i.amount) html = `<span class="chip bg-emerald-100 text-emerald-700">✓ ${paid}</span>`;
   else if (m.status === "Withdrawn" && !paid) html = `<span class="text-slate-300">—</span>`;
@@ -144,9 +208,9 @@ function cell(m, i) {
 
 // ---------- Dashboard ----------
 function renderStats() {
-  const ap = payments.filter(p => p.fy === fy() && p.status === "Approved");
+  const ap = payments.filter(p => p.fy === fy() && paymentCounts(p));
   const dr = payments.filter(p => p.fy === fy() && p.status === "Draft");
-  let overdue = 0, currentMonth = 0;
+  let overdue = receivableRows(today.toISOString().slice(0, 10)).reduce((s, r) => s + r.due, 0), currentMonth = 0;
 
   // শুধু admin-এ unchecked নয় এমন installments দেখাবো
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
@@ -154,7 +218,8 @@ function renderStats() {
   MEMBERS.forEach(m => {
     visibleInsts.forEach(i => {
       const c = cell(m, i);
-      overdue += c.due;
+      // `overdue` already contains the cumulative authoritative receivable.
+      // Do not add the selected year's cells again, or an older-year balance is double-counted.
       if (sameMonth(i) && m.status === "Active") currentMonth += c.left;
     });
   });
@@ -166,7 +231,7 @@ function renderStats() {
     + card("Draft (অপেক্ষমাণ)", `${dr.length} টি / ${fmt(dr.reduce((s, p) => s + p.amount, 0))}`, "text-amber-600")
     + card("সক্রিয় সদস্য", `${MEMBERS.filter(m => m.status === "Active").length} / ${MEMBERS.length}`, "text-slate-800");
 
-  const totals = visibleInsts.map(i => payments.filter(p => p.fy === fy() && p.inst === i.key && p.status === "Approved").reduce((s, p) => s + p.amount, 0));
+  const totals = visibleInsts.map(i => payments.filter(p => p.fy === fy() && (p.inst === i.key || p.instId === i.id) && paymentCounts(p)).reduce((s, p) => s + Number(p.amount || 0), 0));
   if (chart) chart.destroy();
   chart = new Chart($("monthlyChart"), { type: "bar", data: { labels: visibleInsts.map(i => i.key), datasets: [{ label: "BDT", data: totals, backgroundColor: "#10b981", borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
 }
@@ -195,7 +260,7 @@ function renderMembers() {
 
 function viewIndividual(mid) {
   const m = member(mid), rows = payments.filter(p => p.fy === fy() && p.mid === mid).sort((a, b) => a.date.localeCompare(b.date));
-  const total = rows.filter(p => p.status === "Approved").reduce((s, p) => s + p.amount, 0);
+  const total = rows.filter(paymentCounts).reduce((s, p) => s + Number(p.amount || 0), 0);
   $("modal-title").textContent = `${m.name} (${mid}) — জমা: ${fmt(total)}`;
   $("modal-body").innerHTML = `<table class="w-full text-sm"><tr class="bg-slate-100 text-left"><th class="p-2">কিস্তি</th><th>Method</th><th>Date</th><th>Amount</th><th>Status</th><th>Comment</th></tr>` +
     (rows.map(p => `<tr class="border-b"><td class="p-2">${p.inst}</td><td>${p.method}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${statusChip(p.status)}</td><td>${p.comment || "-"}</td></tr>`).join("") || `<tr><td colspan="6" class="p-3 text-center">কোনো payment নেই</td></tr>`) + "</table>";
@@ -618,8 +683,8 @@ function renderApprovals() {
   $("approvals-title").textContent = adminIT ? "Pending Approvals" : "Draft Approval";
   const rows = payments.filter(p => p.status === "Draft");
   $("approvals-table").innerHTML = `<tr class="bg-slate-100"><th class="p-3">FY</th><th>সদস্য</th><th>কিস্তি</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr>` +
-    (rows.map(p => `<tr class="border-b"><td class="p-3">${p.fy}</td><td>${member(p.mid).name}</td><td>${p.inst}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${p.method}</td><td>${statusChip(p.status)}</td>
-      <td class="space-x-2"><button onclick="setStatus(${p.id},'Approved')" class="text-emerald-700 font-semibold">Approve</button><button onclick="setStatus(${p.id},'Rejected')" class="text-amber-700">Reject</button>${adminIT ? `<button onclick="delPayment(${p.id})" class="text-rose-600">Delete</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="p-4 text-center text-slate-500">কিছু নেই</td></tr>`);
+    (rows.map(p => `<tr class="border-b"><td class="p-3">${p.fy}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${p.method}</td><td>${statusChip(p.status)}</td>
+      <td class="space-x-2"><button onclick="setStatus(${p.id},'Approved')" class="text-emerald-700 font-semibold">Approve</button><button onclick="setStatus(${p.id},'Rejected')" class="text-amber-700">Reject</button>${adminIT ? `<button onclick="voidPayment(${p.id})" class="text-rose-600">Delete</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="p-4 text-center text-slate-500">কিছু নেই</td></tr>`);
   const n = payments.filter(p => p.status === "Draft").length;
   $("nav-approvals-label").textContent = `Approvals (${n})`;
 }
@@ -629,24 +694,32 @@ function setStatus(id, s) {
   if (!payment) return toast("শুধু Draft অনুমোদন বা Cancel করা যাবে");
   payment.status = s; save(); refreshAll(); toast(s);
 }
-function delPayment(id) {
-  if (!isAdmin()) return;
-  if (confirm("মুছে ফেলবেন?")) { payments = payments.filter(p => p.id !== id); save(); refreshAll(); }
+function voidPayment(id) {
+  if (!isAdmin()) return toast("শুধু Admin (IT) Approved Payment void করতে পারবেন");
+  const p = payments.find(x => String(x.id) === String(id));
+  if (!p || ["Voided", "Deleted"].includes(p.status)) return toast("Payment পাওয়া যায়নি বা আগে void করা হয়েছে");
+  const detail = `Payment ID: ${p.id}\nMID: ${p.mid}\nInstallment: ${p.inst}\nAmount: ${fmt(p.amount)}\nStatus: ${p.status}`;
+  if (!confirm(detail + "\n\nএই Payment-টি Voided করা হবে। এগিয়ে যাবেন?")) return;
+  const reason = prompt("Deletion reason / বাতিলের কারণ লিখুন:");
+  if (!reason || !reason.trim()) return toast("Deletion reason আবশ্যক");
+  const previousStatus = p.status;
+  p.previousStatus = previousStatus; p.status = "Voided"; p.voidedAt = new Date().toISOString(); p.voidedBy = session.mid; p.voidReason = reason.trim();
+  paymentAudit.push({ id: `pa-${p.id}-${Date.now()}`, paymentId: p.id, deletedBy: session.mid, deletionDate: p.voidedAt, reason: p.voidReason, previousStatus, mid: p.mid, installment: p.inst, amount: p.amount });
+  savePaymentAudit(); save(); refreshAll(); toast("Payment Voided হয়েছে — financial effect reverse হয়েছে");
 }
+const delPayment = voidPayment;
 
 // ---------- Reports ----------
 function summaryRows() {
+  const unified = new Map(receivableRows().map(r => [r.m.mid, r]));
   return MEMBERS.map(m => {
-    let paid = 0, due = 0; insts().forEach(i => { const c = cell(m, i); paid += c.paid; due += c.due; });
-    return { m, paid, due };
+    const r = unified.get(m.mid) || { due: 0, paid: 0, per: [], comment: "" };
+    const paid = allInstallments().filter(i => i.fy === fy()).reduce((s, i) => s + paidOf(m.mid, i.id || i.key), 0);
+    return { m, paid, due: r.due, comment: r.comment, per: r.per };
   });
 }
 function dueMatrix() {
-  return MEMBERS.map(m => {
-    const per = insts().map(i => cell(m, i).due);
-    const paid = insts().reduce((sum, i) => sum + cell(m, i).paid, 0);
-    return { m, paid, per, due: per.reduce((sum, amount) => sum + amount, 0) };
-  });
+  return summaryRows().map(r => ({ ...r, per: insts().map(i => (r.per || []).filter(x => x.key === i.key).reduce((s, x) => s + x.outstanding, 0)) }));
 }
 function exportFullExcel() {
   const wb = XLSX.utils.book_new(), rows = summaryRows();
@@ -829,12 +902,23 @@ function exportDashboardTablePDF() {
 const { jsPDF } = window.jspdf;
 
 // ---------- Navigation ----------
+function adminNavigate(target, button) {
+  if (!isAdmin()) return toast("শুধু Admin (IT) এই section দেখতে পারবেন");
+  document.querySelectorAll("#admin-subnav .admin-subnav-btn").forEach(b => b.classList.toggle("active", b === button));
+  document.querySelectorAll("#page-admin .admin-section").forEach(section => section.classList.toggle("hidden", section.id !== target));
+  $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (target === "admin-finance-section" && typeof renderFinConfig === "function") renderFinConfig();
+}
 function showPage(id) {
   if (!canAccessPage(id)) return toast("No permission to view this page");
   document.querySelectorAll(".page-section").forEach(s => s.classList.add("hidden"));
   $("page-" + id).classList.remove("hidden");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
   $("nav-" + id).classList.add("active");
+  if (id === "admin") {
+    const active = document.querySelector("#admin-subnav .admin-subnav-btn.active");
+    adminNavigate(active?.dataset.adminTarget || "admin-entry-section", active || document.querySelector("#admin-subnav .admin-subnav-btn"));
+  }
   if (id === "financial" && typeof renderFinance === "function") renderFinance();
   if (id === "member-detail") {
     renderMemberDetail();
@@ -848,6 +932,8 @@ function showPage(id) {
 function renderAdmin() {
   if (!isAdmin()) return;
   const k = i => fy() + "|" + i.key;
+  renderPaymentManagement(); renderIncomeYearManagement();
+  if (typeof renderFinConfig === "function") renderFinConfig();
   $("admin-entry").innerHTML = `<label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
     <div class="grid md:grid-cols-2 gap-3 mt-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
     <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>`;
@@ -884,6 +970,27 @@ function renderAdmin() {
       <td><button class="text-rose-600" onclick="delMember('${m.mid}')">Delete</button></td></tr>`).join("");
   if (typeof renderFinConfig === "function") renderFinConfig();
 }
+function renderPaymentManagement() {
+  const box = $("admin-payments"); if (!box || !isAdmin()) return;
+  const q = (box.querySelector("[data-pm-q]")?.value || "").toLowerCase();
+  const status = box.querySelector("[data-pm-status]")?.value || "ALL";
+  const year = box.querySelector("[data-pm-year]")?.value || "ALL";
+  const installment = box.querySelector("[data-pm-inst]")?.value || "ALL";
+  const date = box.querySelector("[data-pm-date]")?.value || "";
+  const list = payments.filter(p => { const m = member(p.mid); const hay = `${p.id} ${p.mid} ${m?.name || ""} ${p.inst}`.toLowerCase(); return (!q || hay.includes(q)) && (status === "ALL" || p.status === status) && (year === "ALL" || p.fy === year) && (installment === "ALL" || p.inst === installment) && (!date || p.date === date); });
+  box.innerHTML = `<div class="flex flex-wrap gap-2 mb-3"><input data-pm-q class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" placeholder="Search MID, Member, Payment ID..." value="${q}"><select data-pm-year class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Financial Years</option>${Object.keys(YEARS).map(y => `<option ${year === y ? "selected" : ""}>${y}</option>`).join("")}</select><select data-pm-inst class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Installments</option>${[...new Set(payments.map(p => p.inst))].sort().map(x => `<option ${installment === x ? "selected" : ""}>${x}</option>`).join("")}</select><select data-pm-status class="border rounded-lg px-3 py-2 text-sm">${["ALL", "Draft", "Approved", "Rejected", "Voided"].map(x => `<option ${status === x ? "selected" : ""}>${x === "ALL" ? "All Statuses" : x}</option>`).join("")}</select><input data-pm-date type="date" class="border rounded-lg px-3 py-2 text-sm" value="${date}"></div><div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr><th class="p-2">SL</th><th>Financial Year</th><th>MID</th><th>Member Name</th><th>Installment</th><th>Payment Date</th><th>Amount (BDT)</th><th>Payment Method</th><th>Status</th><th>Action</th></tr></thead><tbody>${list.map((p, n) => `<tr class="border-b"><td class="p-2">${n + 1}</td><td>${p.fy}</td><td class="font-mono">${p.mid}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date || "-"}</td><td>${fmt(p.amount)}</td><td>${p.method || "-"}</td><td>${statusChip(p.status)}</td><td>${p.status !== "Voided" ? `<button class="text-rose-600 underline" onclick="voidPayment(${p.id})">Void/Delete</button>` : `<span class="text-slate-500">${p.voidReason || "Voided"}</span>`}</td></tr>`).join("") || `<tr><td colspan="10" class="p-4 text-center text-slate-500">No payments found</td></tr>`}</tbody></table></div>`;
+  box.querySelectorAll("input,select").forEach(el => el.addEventListener("input", () => renderPaymentManagement()));
+}
+function addMonthsDate(start, month) { const d = new Date(start + "T00:00:00"); d.setMonth(d.getMonth() + month); return d; }
+function renderIncomeYearManagement() {
+  const box = $("admin-years"); if (!box || !isAdmin()) return;
+  box.innerHTML = `<form id="income-year-form" class="grid md:grid-cols-6 gap-2 mb-4"><input id="iy-name" class="inp" placeholder="Income Year (2027-28)" required><input id="iy-start" type="date" class="inp" required><input id="iy-end" type="date" class="inp" required><input id="iy-amount" type="number" min="1" class="inp" placeholder="Monthly Amount" required><input id="iy-day" type="number" min="1" max="31" class="inp" placeholder="Due Day" value="25" required><button class="bg-emerald-600 text-white rounded-lg px-3 py-2">Create Income Year</button></form>${incomeYears.map(y => `<div class="border rounded-lg p-3 mb-3"><div class="flex flex-wrap gap-2 items-center"><input class="border rounded p-1 font-semibold" value="${y.name}" onchange="editIncomeYear('${y.id}','name',this.value)"><input type="date" class="border rounded p-1" value="${y.startDate}" onchange="editIncomeYear('${y.id}','startDate',this.value)"><input type="date" class="border rounded p-1" value="${y.endDate}" onchange="editIncomeYear('${y.id}','endDate',this.value)"><input type="number" class="border rounded p-1 w-28" value="${y.defaultAmount}" onchange="editIncomeYear('${y.id}','defaultAmount',this.value)"><input type="number" class="border rounded p-1 w-20" value="${y.dueDay}" onchange="editIncomeYear('${y.id}','dueDay',this.value)"><select class="border rounded p-1" onchange="editIncomeYear('${y.id}','status',this.value)"><option ${y.status === "Active" ? "selected" : ""}>Active</option><option ${y.status === "Inactive" ? "selected" : ""}>Inactive</option></select></div><div class="overflow-x-auto mt-3"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th>SL</th><th>Name</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Payments</th><th>Action</th></tr></thead><tbody>${(y.installments || []).map((i, n) => `<tr class="border-b"><td>${n + 1}</td><td><input class="border rounded p-1" value="${i.name}" onchange="editInstallment('${y.id}','${i.id}','name',this.value)"></td><td><input type="date" class="border rounded p-1" value="${i.dueDate}" onchange="editInstallment('${y.id}','${i.id}','dueDate',this.value)"></td><td><input type="number" class="border rounded p-1 w-24" value="${i.amount}" onchange="editInstallment('${y.id}','${i.id}','amount',this.value)"></td><td><select class="border rounded p-1" onchange="editInstallment('${y.id}','${i.id}','status',this.value)"><option ${i.status === "Active" ? "selected" : ""}>Active</option><option ${i.status === "Inactive" ? "selected" : ""}>Inactive</option></select></td><td>${payments.filter(p => p.fy === y.name && (p.instId === i.id || p.inst === i.legacyKey || p.inst === i.name)).length}</td><td><button class="text-rose-600" onclick="archiveInstallment('${y.id}','${i.id}');return false">Archive</button></td></tr>`).join("")}</tbody></table></div></div>`)}`;
+  $("income-year-form").onsubmit = e => { e.preventDefault(); createIncomeYear(); };
+}
+function createIncomeYear() { if (!isAdmin()) return; const name = $("iy-name").value.trim(), startDate = $("iy-start").value, endDate = $("iy-end").value, defaultAmount = Number($("iy-amount").value), dueDay = Number($("iy-day").value); if (!name || !startDate || !endDate || endDate < startDate || defaultAmount <= 0 || dueDay < 1 || dueDay > 31 || incomeYears.some(y => y.name === name)) return toast("Income Year details সঠিক নয় বা আগে থেকেই আছে"); const start = new Date(startDate + "T00:00:00"), months = []; for (let n = 0; n < 12; n++) { const d = addMonthsDate(start, n); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(dueDay, last)); months.push({ id: `iy-${slugId(name)}-${n + 1}`, name: d.toLocaleString("en", { month: "long" }) + "/" + String(d.getFullYear()).slice(-2), dueDate: d.toISOString().slice(0, 10), amount: defaultAmount, status: "Active" }); } incomeYears.push({ id: `iy-${slugId(name)}-${Date.now()}`, name, startDate, endDate, defaultAmount, dueDay, status: "Active", installments: months }); saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); startApp(); toast("Income Year created with 12 installments"); }
+function editIncomeYear(id, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === id); if (!y) return; if (field === "name" && incomeYears.some(x => x.id !== id && x.name === value.trim())) return toast("Income Year already exists"); y[field] = ["defaultAmount", "dueDay"].includes(field) ? Number(value) : value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
+function editInstallment(yid, iid, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; i[field] = field === "amount" ? Number(value) : value; if (field === "name" && !i.legacyKey) i.legacyKey = value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
+function archiveInstallment(yid, iid) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (payments.some(p => p.fy === y.name && (p.instId === iid || p.inst === i.legacyKey || p.inst === i.name))) return toast("Payment associated — deactivate instead of deleting"); if (confirm("Installment archive করবেন?")) { i.status = "Inactive"; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); } }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
 function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); refreshAll(); }
 function setAmt(k, v) { if (!isAdmin()) return; S.amt[k] = Number(v); saveS(); applyAmounts(); refreshAll(); toast("Saved"); }
@@ -1069,6 +1176,7 @@ function startApp() {
   ["dashboard", "entry", "approvals", "admin", "reports"].forEach(page => {
     $("nav-" + page).classList.toggle("hidden", !canAccessPage(page));
   });
+  refreshYearsFromModel();
   $("fy-select").innerHTML = Object.keys(YEARS).reverse().map(y => `<option>${y}</option>`).join("");
   const opts = () => insts().map(i => `<option>${i.key}</option>`).join("");
   $("fy-select").onchange = () => { renderEntryOptions(); $("report-month-select").innerHTML = opts(); syncAmount(); refreshAll(); };
@@ -1113,6 +1221,8 @@ function remoteRefresh(what) {
   if (!$("page-member-detail").classList.contains("hidden") && !personalEditMode) { renderMemberDetail(); if (!$("member-directory-container").classList.contains("hidden")) renderMemberDirectory(); }
 }
 DB.subscribe("payments", v => { payments = v; remoteRefresh("payments"); });
+DB.subscribe("incomeYears", v => { incomeYears = Array.isArray(v) ? v : []; refreshYearsFromModel(); if (session) startApp(); });
+DB.subscribe("paymentAudit", v => { paymentAudit = Array.isArray(v) ? v : []; });
 DB.subscribe("members", v => { MEMBERS.length = 0; MEMBERS.push(...v); remoteRefresh("members"); });
 DB.subscribe("passwords", v => { pw = v || {}; });
 DB.subscribe("settings", v => {

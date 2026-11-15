@@ -93,28 +93,27 @@ function finCompute(asOfIn, fy = "ALL", txs = FTX) {
   });
   const bump = (k, v) => { B[k] = (B[k] || 0) + v; };
   const settle = {}; txs.filter(t => t.type === "payout").forEach(t => { if (!settle[t.mid] || t.date < settle[t.mid]) settle[t.mid] = t.date; });
-  const mem = {}; MEMBERS.forEach(m => { const o = FIN_MEM[m.mid] || {}; mem[m.mid] = { m, inv: o.inv || 0, fee: o.fee || 0, openDue: o.due || 0, note: o.note || "", oldPaid: 0, newDue: 0, payout: 0, settledOn: null, add: 0, ded: 0 }; });
+  const mem = {}; MEMBERS.forEach(m => { const o = FIN_MEM[m.mid] || {}; mem[m.mid] = { m, inv: o.inv || 0, fee: o.fee || 0, openDue: o.due || 0, note: o.note || "", oldPaid: 0, newDue: 0, payout: 0, settledOn: null, add: 0, ded: 0, receivable: null }; });
   const ev = [{ d: "", t: "add", a: O.inc.profit + O.inc.interest + O.inc.misc, open: true }, { d: "", t: "ded", a: O.inc.membership + Object.values(O.exp).reduce((s, v) => s + v, 0), open: true }];
   const instOf = p => (YEARS[p.fy] || []).find(i => i.key === p.inst);
-  payments.filter(p => p.status === "Approved" && p.date && p.date <= asOf && mem[p.mid]).forEach(p => {
+  payments.filter(p => p.status === "Approved" && !["Voided", "Deleted", "Rejected", "Draft"].includes(p.status) && p.date && p.date <= asOf && mem[p.mid]).forEach(p => {
     const x = mem[p.mid], a = p.amount;
     if (p.inst === "Membership Fee") { if (p.date > C) { I.membership += a; bump("ast:bank", a); bump("eqt:ret", a); x.fee += a; x.inv += a; if (inP(p.date)) pI.membership += a; ev.push({ d: p.date, t: "ded", a }); } return; }
     const i = instOf(p), old = p.fy === "2025-26" || (i && i.due <= C);
     if (old) { if (p.date <= C) return; x.oldPaid += a; bump("ast:bank", a); x.inv += a; }
     else { bump("ast:bank", a); bump("eqt:cap", a); x.inv += a; }
   });
-  // নতুন কিস্তি পেরিয়ে গেলে Receivable — শুধু Active সদস্য (বাতিল হলে বাতিলের তারিখ পর্যন্ত; Settlement-এর পর আর নয়)
-  for (const f in YEARS) YEARS[f].forEach(i => {
-    if (i.key === "Membership Fee" || i.due <= C || i.due > asOf) return;
-    MEMBERS.forEach(m => {
-      if (!(m.status === "Active" || (m.cancelDate && i.due <= m.cancelDate))) return;
-      if (settle[m.mid] && i.due >= settle[m.mid]) return;
-      const paid = payments.filter(p => p.fy === f && p.mid === m.mid && p.inst === i.key && p.status === "Approved" && p.date <= asOf).reduce((s, p) => s + p.amount, 0);
-      const u = Math.max(0, i.amount - paid); mem[m.mid].newDue += u; bump("eqt:cap", u);
-    });
-  });
+  // Subscription receivable is calculated by the same installment-level engine as Dashboard.
+  const unifiedReceivable = typeof receivableRows === "function" ? receivableRows(asOf) : [];
+  // Subscription receivable has one source of truth: the installment-level rows.
+  // Do not add FIN_MEM.openDue here; those values are historical opening data and
+  // would double-count balances already represented by legacy installments.
+  const unifiedTotal = unifiedReceivable.reduce((s, r) => s + Math.max(0, Number(r.due || 0)), 0);
+  unifiedReceivable.forEach(r => { if (!mem[r.m.mid]) return; mem[r.m.mid].receivable = r; mem[r.m.mid].newDue = r.due; bump("eqt:cap", r.due); });
   let recv = 0;
-  Object.values(mem).forEach(x => { const ap = Math.min(x.oldPaid, x.openDue); bump("eqt:cap", x.oldPaid - ap); x.recv = x.openDue - ap + x.newDue; x.applied = ap; recv += x.recv; });
+  Object.values(mem).forEach(x => { const ap = Math.min(x.oldPaid, x.openDue); bump("eqt:cap", x.oldPaid - ap); x.recv = x.receivable ? x.receivable.due : 0; x.applied = ap; recv += x.recv; });
+  // The total is intentionally derived from the same rows used by Dashboard.
+  recv = unifiedTotal;
   B["ast:recv"] = recv;
   const post = (e, d) => {
     const a = e.a, per = inP(d);
@@ -160,7 +159,7 @@ function finBsRows(R) {
 }
 const finNm = x => x.m.name + (x.settledOn ? ` (Settled ${fD(x.settledOn)})` : x.m.status !== "Active" ? " (Cancelled)" : "");
 const finNotes = R => [`* Addition: Profit + Bank Interest + অন্যান্য আয় (মোট ${fN(R.other)}) — প্রতিটি আয় তার তারিখে তখনকার সদস্যদের মধ্যে সমান ভাগ`, `**Deduction: Membership fee + সব খরচ (মোট ${fN(R.I.membership + R.totExp)}) — একই নিয়মে ভাগ; Settlement-এর তারিখ থেকে সেই সদস্য বাদ`];
-const finComment = (x, C) => [x.recv - x.newDue > 0 && x.note ? x.note : "", x.applied ? `Received after ${fD(C)}: ${x.applied}/-` : "", x.newDue ? `New Due: ${x.newDue}/-` : ""].filter(Boolean).join(" | ");
+const finComment = (x, C) => x.receivable?.comment || [x.recv - x.newDue > 0 && x.note ? x.note : "", x.applied ? `Received after ${fD(C)}: ${x.applied}/-` : "", x.newDue ? `New Due: ${x.newDue}/-` : ""].filter(Boolean).join(" | ");
 
 // ---------- Page ----------
 function finLimits() {
@@ -200,7 +199,7 @@ function renderFinance() {
       <tr class="bg-slate-100 font-bold">${td("")}${td("")}${td("Total")}${td(fN(rs(x => x.inv)), "text-right")}${td(fN(rs(x => x.add)), "text-right")}${td(fN(rs(x => x.ded)), "text-right")}${td(fN(rs(x => x.payout)), "text-right")}${td(fN(rs(x => x.total)), "text-right")}</tr></tbody></table>
     <p class="text-xs text-slate-500 mt-2">${finNotes(R).map(esc).join("<br>")}</p></div>
   <div class="bg-white rounded-xl border p-4 mb-5 overflow-x-auto"><h3 class="font-bold mb-2">Subscription Receivable</h3>
-    <table class="w-full text-sm">${th(["SL", "MID", "Name", "Receivable (Taka)", "Comment"])}<tbody>${R.rows.map(x => `<tr>${td(x.m.sl)}${td(x.m.mid)}${td(esc(finNm(x)))}${td(fN(x.recv), "text-right")}${td(esc(finComment(x, R.C)))}</tr>`).join("")}
+    <table class="w-full text-sm">${th(["SL", "MID", "Name", "Receivable (Taka)", "Comment"])}<tbody>${R.rows.filter(x => x.recv > 0 && !x.settledOn).map(x => `<tr>${td(x.m.sl)}${td(x.m.mid)}${td(esc(finNm(x)))}${td(fN(x.recv), "text-right")}${td(esc(finComment(x, R.C)))}</tr>`).join("")}
       <tr class="bg-slate-100 font-bold">${td("")}${td("")}${td("Total")}${td(fN(R.recv), "text-right")}${td("")}</tr></tbody></table></div>
   <div class="bg-white rounded-xl border p-4 mb-5 overflow-x-auto"><h3 class="font-bold mb-2">Membership Fee</h3>
     <table class="w-full text-sm">${th(["SL", "MID", "Name", "Amount (Taka)"])}<tbody>${R.rows.map(x => `<tr>${td(x.m.sl)}${td(x.m.mid)}${td(esc(finNm(x)))}${td(fN(x.fee), "text-right")}</tr>`).join("")}
@@ -468,7 +467,7 @@ function finExcel() {
     ["Assets", "Amount (BDT)", "Liabilities & Equity", "Amount (BDT)"], ...finBsRows(R), ["Total Assets", R.assets, "Total Liabilities & Equity", R.le]], [38, 16, 42, 16]);
   add("Total Payable Amount", [["Total Payable Amount (Individual)"], ["Date: " + fD(R.asOf)], [], ["SL NO.", "MID", "Name", "Investment Amount (Taka)", "Addition (Profit, Bank Interest, Etc)*", "Deduction (Membership fee, Cost Etc)**", "Paid Out (Settlement)", "Total Payable Amount"],
     ...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), x.inv, x.add, x.ded, x.payout, x.total]), ["", "", "Total", ...[x => x.inv, x => x.add, x => x.ded, x => x.payout, x => x.total].map(f => R.rows.reduce((s, x) => s + f(x), 0))], [], ...finNotes(R).map(n => [n])], [8, 12, 34, 22, 22, 22, 18, 20]);
-  add("Subscription Receivable", [["Subscription Receivable"], ["Date: " + fD(R.asOf)], [], ["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"], ...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), x.recv, finComment(x, R.C)]), ["", "", "Total", R.recv]], [8, 12, 34, 16, 60]);
+  add("Subscription Receivable", [["Subscription Receivable"], ["Date: " + fD(R.asOf)], [], ["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"], ...R.rows.filter(x => x.recv > 0 && !x.settledOn).map(x => [x.m.sl, x.m.mid, finNm(x), x.recv, finComment(x, R.C)]), ["", "", "Total", R.recv]], [8, 12, 34, 16, 60]);
   add("Membership Fee", [["Membership Fee"], ["Date: " + fD(R.asOf)], [], ["SL NO.", "MID", "Name", "Amount (Taka)"], ...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), x.fee]), ["", "", "Total", R.I.membership]], [8, 12, 34, 16]);
   if (isApprover()) add("Transactions", finTxRows(), [38, 12, 34, 34, 34, 34, 14, 18, 18, 30, 40, 14]);
   XLSX.writeFile(wb, `PGCS-21_Financial_Statement_${finFY}_${R.asOf}.xlsx`); toast("Financial Statement Excel downloaded");
@@ -498,7 +497,7 @@ function finPDF() {
     { 2: { halign: "left" }, 3: tr, 4: tr, 5: tr, 6: tr, 7: tr });
   doc.setFontSize(8); doc.setFont("helvetica", "normal"); finNotes(R).forEach((n, k) => doc.text(doc.splitTextToSize(n, 180), 14, doc.lastAutoTable.finalY + 6 + k * 8)); signBlock(doc);
   let y2 = page("Subscription Receivable", "Date: " + fD(R.asOf));
-  tb(y2, ["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"], [...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), f(x.recv), finComment(x, R.C)]), tot("Total", f(R.recv), "")],
+  tb(y2, ["SL NO.", "MID", "Name", "Amount (Taka)", "Comment"], [...R.rows.filter(x => x.recv > 0 && !x.settledOn).map(x => [x.m.sl, x.m.mid, finNm(x), f(x.recv), finComment(x, R.C)]), tot("Total", f(R.recv), "")],
     { 2: { halign: "left" }, 3: tr, 4: { halign: "left", cellWidth: 62 } }); signBlock(doc);
   let y3 = page("Membership Fee", "Date: " + fD(R.asOf));
   tb(y3, ["SL NO.", "MID", "Name", "Amount (Taka)"], [...R.rows.map(x => [x.m.sl, x.m.mid, finNm(x), f(x.fee)]), tot("Total", f(R.I.membership))], { 2: { halign: "left" }, 3: tr }); signBlock(doc);
