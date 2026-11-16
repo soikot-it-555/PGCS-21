@@ -144,6 +144,12 @@ const srvPay = s => [...s.t.payments.values()].map(r => r.data).sort((a, b) => a
     b.set(PAY, b.get(PAY).map(p => p.id === 1 ? { ...p, comment: "v2" } : p)); assert.equal(await b.DB.flush(), true);
     assert.equal(s.t.payments.get("1").data.comment, "v2");
   });
+  await test("DB integrity rule rejects an edit of an Approved payment: change dropped (no endless retry) and server copy restored", async () => {
+    const s = await fresh(); const b1 = await boot(s, "local", { realtime: false });
+    s.guard = (t, old, body) => t === "payments" && old.data.status === "Approved" && body.data && body.data.amount !== old.data.amount ? "An Approved payment cannot be edited - void it instead" : null;
+    b1.set(PAY, b1.get(PAY).map(p => p.id === 3 ? { ...p, amount: 1 } : p)); assert.equal(await b1.DB.flush(), true);
+    assert.equal(s.t.payments.get("3").data.amount, 1000, "server changed"); assert.equal(b1.get(PAY).find(p => p.id === 3).amount, 1000, "local not restored"); assert.equal(b1.DB.pending(), false);
+  });
   for (const [r, n] of results) console.log(r, "-", n);
   console.log(results.filter(r => r[0] === "PASS").length + "/" + results.length + " passed");
   process.exit(results.some(r => r[0] === "FAIL") ? 1 : 0);

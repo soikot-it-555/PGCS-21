@@ -34,7 +34,7 @@ class Server {
     }
     if (method === "PATCH") {
       const out = [];
-      for (const r of [...T.values()]) if (this.match(r, filters)) { const nr = { ...r, ...body, version: r.version + 1, updated_at: now }; T.set(String(r[pk]), nr); out.push(nr); this.emit(table, "UPDATE", nr, { [pk]: r[pk] }); this.writes.push(["update", table, String(r[pk])]); }
+      for (const r of [...T.values()]) if (this.match(r, filters)) { const gm = this.guard && this.guard(table, r, body); if (gm) return new Response(JSON.stringify({ code: "P0001", message: gm }), { status: 400 }); const nr = { ...r, ...body, version: r.version + 1, updated_at: now }; T.set(String(r[pk]), nr); out.push(nr); this.emit(table, "UPDATE", nr, { [pk]: r[pk] }); this.writes.push(["update", table, String(r[pk])]); }
       return prefer.includes("return=representation") ? ok(out) : ok(null, 204);
     }
     if (method === "DELETE") {

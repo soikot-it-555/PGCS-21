@@ -343,7 +343,7 @@
   function markOk() { failCount = 0; lastErr = null; refreshPill(); }
   function markFail(e) { failCount++; lastErr = e; refreshPill(); }
   async function pump() {
-    pumping = true; const all = [];
+    pumping = true; const all = [], rejected = [];
     try {
       while (queue.size && !paused) {
         const head = [...queue.values()].find(o => !o.inflight); if (!head) break;
@@ -359,6 +359,15 @@
           if (res.length) { all.push(...res); c.changed(); }
           markOk(); errBanner("");
         } catch (e) {
+          if (!e.network && [400, 409, 422].includes(e.status)) {      // permanent rejection by a database rule: drop it (never retry forever) and restore the server copy
+            let msg = e.body || e.message; try { msg = JSON.parse(e.body).message || msg; } catch { }
+            batch.forEach(o => {
+              queue.delete(qkey(o.name, o.id)); o.inflight = false;
+              const k = c.known.get(o.id); if (k) c.view.set(o.id, c.isRows() ? k.j : k); else c.view.delete(o.id);
+            });
+            rejected.push(DEFS[c.name].label + " — " + String(msg).slice(0, 160)); c.changed(); markOk();
+            continue;
+          }
           batch.forEach(o => { o.inflight = false; if (o.after) { if (o.after.t === "set") { o.t = "set"; o.j = o.after.j; } else o.t = "del"; delete o.after; } });
           console.error("Database save failed:", e);
           markFail(e);
@@ -375,6 +384,7 @@
         warnBanner("⚠️ Conflict: আপনার পরিবর্তন প্রয়োগ হয়নি, Database-এর সর্বশেষ সংস্করণ লোড হয়েছে → " + describe(all));
         window.dispatchEvent(new CustomEvent("db-conflict", { detail: all }));
       }
+      if (rejected.length) warnBanner("⚠️ Database পরিবর্তনটি গ্রহণ করেনি (সংরক্ষণ হয়নি): " + rejected.join("; "));
       if (queue.size && !retryTimer && !paused) setTimeout(kick, 0);
     }
   }
@@ -384,7 +394,7 @@
   });
 
   // -------------------------------------------------- localStorage interception
-  const TRACK = { [PAY_KEY]: "payments", [FIN_TX_KEY]: "finTx", [MEMBERS_KEY]: "members", [SETTINGS_KEY]: "settings", [PW_KEY]: "passwords", [FIN_CFG_KEY]: "finCfg" };
+  const TRACK = { [PAY_KEY]: "payments", [FIN_TX_KEY]: "finTx", [MEMBERS_KEY]: "members", [SETTINGS_KEY]: "settings", [PW_KEY]: "passwords", [FIN_CFG_KEY]: "finCfg", [INCOME_YEARS_KEY]: "incomeYears", [PAYMENT_AUDIT_KEY]: "paymentAudit" };   // income years + payment audit must be uploaded too (they were only downloaded)
   Storage.prototype.setItem = function (k, v) {
     origSet.call(this, k, v);
     if (this === ls && ready && TRACK[k]) { colls[TRACK[k]].onLocal(String(v)); persistQueue(); refreshPill(); kick(); }

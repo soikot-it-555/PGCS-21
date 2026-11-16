@@ -51,9 +51,12 @@ const save = () => localStorage.setItem(KEY, JSON.stringify(payments));
 const $ = id => document.getElementById(String(id).replace(/^#/, ""));
 const fy = () => $("fy-select").value;
 const insts = () => YEARS[fy()] || [];
+// local calendar date (NOT toISOString: that is the UTC date and is one day behind in Bangladesh before 06:00)
+const pad2 = n => String(n).padStart(2, "0");
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
 const allInstallments = () => {
   const seen = new Set();
-  return incomeYears.flatMap(y => (y.installments || []).filter(i => i.status !== "Inactive").map(i => ({ ...i, fy: y.name, incomeYearId: y.id, key: i.legacyKey || i.name, due: i.dueDate }))).filter(i => {
+  return incomeYears.flatMap(y => (y.installments || []).map(i => ({ ...i, fy: y.name, incomeYearId: y.id, yearInactive: y.status === "Inactive", key: i.legacyKey || i.name, due: i.dueDate }))).filter(i => {
     // Legacy and remotely migrated catalogs can contain the same year/name/date
     // under different generated IDs. Count the logical installment once.
     const logicalKey = `${i.fy}|${i.key}|${i.due}`;
@@ -64,32 +67,26 @@ const allInstallments = () => {
 const paymentCounts = p => p && p.status === "Approved" && !["Voided", "Deleted", "Rejected", "Draft"].includes(p.status);
 const paymentMatchesInstallment = (p, i) => p && p.mid && p.fy === i.fy && (p.instId === i.id || p.inst === i.key || p.inst === i.name);
 const memberSettlementDate = mid => typeof finSettleDate === "function" ? finSettleDate(mid) : null;
-function receivableRows(asOf = new Date().toISOString().slice(0, 10)) {
-  const rows = MEMBERS.map(m => ({ m, paid: 0, due: 0, per: [], comments: [] }));
-  const byMid = new Map(rows.map(x => [x.m.mid, x]));
-  const paid = new Map();
-  allInstallments().forEach(i => {
-    MEMBERS.forEach(m => {
-      // Approved legacy payments with an empty date are still valid payments;
-      // only an explicitly future-dated payment is excluded from the statement.
-      const iPaid = payments.filter(p => paymentCounts(p) && (!p.date || p.date <= asOf) && p.mid === m.mid && paymentMatchesInstallment(p, i)).reduce((s, p) => s + Number(p.amount || 0), 0);
-      paid.set(`${m.mid}|${i.id}`, iPaid);
-    });
-  });
-  allInstallments().forEach(i => {
-    if (!i.due || i.due > asOf || !i.fy || i.key === "Membership Fee") return;
-    MEMBERS.forEach(m => {
-      const row = byMid.get(m.mid); if (!row) return;
-      const settled = memberSettlementDate(m.mid);
-      if (settled && i.due >= settled) return;
-      if (m.status !== "Active" && (!m.cancelDate || i.due > m.cancelDate)) return;
-      const amount = Math.max(0, Number(i.amount || 0) - (paid.get(`${m.mid}|${i.id}`) || 0));
-      if (!amount) return;
-      row.due += amount; row.per.push({ ...i, outstanding: amount });
-      row.comments.push(`${instLabel(i)} Payment Due (${amount}/-)`);
-    });
-  });
-  return rows.map(r => ({ ...r, due: Math.max(0, r.due), comment: r.comments.join(", ") })).filter(r => r.due > 0);
+// ===== THE ONE authoritative installment-level receivable calculation =====
+// Used by Dashboard cells, Dashboard totals, Financial Statement page, PDF and Excel.
+//   outstanding = installment amount - Approved payments (same member + installment, dated on/before asOf), never negative
+//   counted only if: installment & Income Year active, not Membership Fee, due on/before asOf,
+//   member not finally settled, cancelled members only up to their cancel date.
+function receivableDue(m, i, asOf = todayISO()) {
+  if (!i || i.yearInactive || i.status === "Inactive" || S.closed.includes(`${i.fy}|${i.key}`)) return 0;
+  if (!i.due || i.due > asOf || i.key === "Membership Fee") return 0;
+  const settled = memberSettlementDate(m.mid); if (settled && settled <= asOf) return 0;
+  if (m.status !== "Active" && (!m.cancelDate || i.due > m.cancelDate)) return 0;
+  const paid = payments.filter(p => paymentCounts(p) && (!p.date || p.date <= asOf) && p.mid === m.mid && paymentMatchesInstallment(p, i)).reduce((s, p) => s + Number(p.amount || 0), 0);
+  return Math.max(0, Number(i.amount || 0) - paid);
+}
+function receivableRows(asOf = todayISO()) {
+  const list = allInstallments();
+  return MEMBERS.map(m => {
+    const per = [], comments = []; let due = 0;
+    list.forEach(i => { const amount = receivableDue(m, i, asOf); if (!amount) return; due += amount; per.push({ ...i, outstanding: amount }); comments.push(`${instLabel(i)} Payment Due (${amount}/-)`); });
+    return { m, paid: 0, due, per, comments, comment: comments.join(", ") };
+  }).filter(r => r.due > 0);
 }
 const accessRole = m => Object.hasOwn(ACCESS_ROLES, m?.accessRole) ? m.accessRole : m?.mid.toUpperCase() === DEFAULT_IT_MID ? "adminIT" : "member";
 const currentRole = () => session?.role;
@@ -196,13 +193,13 @@ const paidOf = (mid, key, st = "Approved") => {
 
 function cell(m, i) {
   const paid = paidOf(m.mid, i.id || i.key), draft = paidOf(m.mid, i.id || i.key, "Draft"), left = Math.max(0, Number(i.amount || 0) - paid);
-  let due = 0, html;
+  const due = receivableDue(m, { ...i, fy: fy() }, todayISO());     // same engine as the Financial Statement
+  let html;
   if (paid >= i.amount) html = `<span class="chip bg-emerald-100 text-emerald-700">✓ ${paid}</span>`;
-  else if (m.status === "Withdrawn" && !paid) html = `<span class="text-slate-300">—</span>`;
-  else if (isPastDue(i)) { due = left; html = `<span class="chip bg-rose-100 text-rose-700">Due ${left}</span>`; }
+  else if (due > 0) html = `<span class="chip bg-rose-100 text-rose-700">Due ${due}</span>`;
+  else if (m.status !== "Active" && !paid) html = `<span class="text-slate-300">—</span>`;
   else html = paid ? `<span class="chip bg-sky-100 text-sky-700">${paid}/${i.amount}</span>` : `<span class="text-slate-400">${left}</span>`;
   if (draft) html += ` <span class="chip bg-amber-100 text-amber-700">Draft ${draft}</span>`;
-  if (m.status === "Withdrawn" && !paid) due = 0;
   return { html, due, paid, left, draft };
 }
 
@@ -210,7 +207,7 @@ function cell(m, i) {
 function renderStats() {
   const ap = payments.filter(p => p.fy === fy() && paymentCounts(p));
   const dr = payments.filter(p => p.fy === fy() && p.status === "Draft");
-  let overdue = receivableRows(today.toISOString().slice(0, 10)).reduce((s, r) => s + r.due, 0), currentMonth = 0;
+  let overdue = receivableRows(todayISO()).reduce((s, r) => s + r.due, 0), currentMonth = 0;
 
   // শুধু admin-এ unchecked নয় এমন installments দেখাবো
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
@@ -244,18 +241,20 @@ function renderMembers() {
   // শুধু admin-এ unchecked নয় এমন installments দেখাবো
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
-  let head = `<thead><tr><th>MID</th><th>Name</th><th>Total Paid</th><th>Current Month Due</th><th>Total Due</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
+  let head = `<thead><tr><th>MID</th><th>Name</th><th>Total Paid</th><th>Current Month Due</th><th>Total Due</th><th title="সব Income Year মিলিয়ে — Financial Statement-এর Receivable-এর সমান">Receivable (All Years)</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
   const f = $("filter-status").value;
+  const allRecv = new Map(receivableRows(todayISO()).map(r => [r.m.mid, r.due]));
   const body = list.map(m => {
     let total = 0, due = 0, cur = 0, dr = 0;
     const cells = visibleInsts.map(i => { const c = cell(m, i); total += c.paid; due += c.due; dr += c.draft; if (sameMonth(i) && m.status === "Active") cur += c.left; return `<td>${c.html}</td>`; }).join("");
     if ((f === "DUE" && !due) || (f === "DRAFT" && !dr) || (f === "FULL" && (due || !total))) return "";
     return `<tr><td class="font-mono font-semibold">${m.mid}</td><td>${m.name}${m.status === "Withdrawn" ? ' <span class="chip bg-slate-200 text-slate-600">Withdrawn</span>' : ""}</td>
       <td class="font-bold">${fmt(total)}</td><td class="${cur ? "text-amber-600" : ""}">${fmt(cur)}</td>
-      <td class="font-bold ${due ? "text-rose-600" : "text-emerald-600"}">${fmt(due)}</td>${cells}
+      <td class="font-bold ${due ? "text-rose-600" : "text-emerald-600"}">${fmt(due)}</td>
+      <td class="font-bold ${allRecv.get(m.mid) ? "text-rose-600" : "text-emerald-600"}">${fmt(allRecv.get(m.mid) || 0)}</td>${cells}
       <td><button onclick="viewIndividual('${m.mid}')" class="text-blue-600 underline">Details</button></td></tr>`;
   }).join("");
-  $("matrix").innerHTML = head + `<tbody>${body || '<tr><td colspan="9" class="p-4">কোনো সদস্য পাওয়া যায়নি</td></tr>'}</tbody>`;
+  $("matrix").innerHTML = head + `<tbody>${body || '<tr><td colspan="10" class="p-4">কোনো সদস্য পাওয়া যায়নি</td></tr>'}</tbody>`;
 }
 
 function viewIndividual(mid) {
@@ -657,6 +656,7 @@ $("paymentForm").addEventListener("submit", e => {
       fy: fy(),
       mid,
       inst: instKey,
+      instId: inst.id,
       method,
       date,
       amount: inst.amount,
@@ -698,6 +698,7 @@ function voidPayment(id) {
   if (!isAdmin()) return toast("শুধু Admin (IT) Approved Payment void করতে পারবেন");
   const p = payments.find(x => String(x.id) === String(id));
   if (!p || ["Voided", "Deleted"].includes(p.status)) return toast("Payment পাওয়া যায়নি বা আগে void করা হয়েছে");
+  if (p.status !== "Approved") return toast("শুধু Approved Payment Void করা যায় (Draft হলে Cancel/Reject করুন)");
   const detail = `Payment ID: ${p.id}\nMID: ${p.mid}\nInstallment: ${p.inst}\nAmount: ${fmt(p.amount)}\nStatus: ${p.status}`;
   if (!confirm(detail + "\n\nএই Payment-টি Voided করা হবে। এগিয়ে যাবেন?")) return;
   const reason = prompt("Deletion reason / বাতিলের কারণ লিখুন:");
@@ -1021,15 +1022,43 @@ function renderPaymentManagement() {
   box.innerHTML = `<div class="flex flex-wrap gap-2 mb-3"><input data-pm-q data-pm-search class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" placeholder="Search MID, Member, Payment ID, installment..." value="${escValue(q)}"><select data-pm-year class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Financial Years</option>${Object.keys(YEARS).map(y => `<option value="${escValue(y)}" ${year === y ? "selected" : ""}>${escValue(y)}</option>`).join("")}</select><select data-pm-inst class="border rounded-lg px-3 py-2 text-sm"><option value="ALL">All Installments</option>${installmentOptions.map(([value, label]) => `<option value="${escValue(value)}" ${installment === value ? "selected" : ""}>${escValue(label)}</option>`).join("")}</select><select data-pm-status class="border rounded-lg px-3 py-2 text-sm">${["ALL", "Draft", "Approved", "Rejected", "Voided"].map(x => `<option value="${x}" ${status === x ? "selected" : ""}>${x === "ALL" ? "All Statuses" : x}</option>`).join("")}</select><input data-pm-date type="date" class="border rounded-lg px-3 py-2 text-sm" value="${escValue(date)}"><button type="button" data-pm-clear class="border rounded-lg px-3 py-2 text-sm hover:bg-slate-100">Clear</button></div><div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr><th class="p-2">SL</th><th>Financial Year</th><th>MID</th><th>Member Name</th><th>Installment</th><th>Payment Date</th><th>Amount (BDT)</th><th>Payment Method</th><th>Status</th><th>Action</th></tr></thead><tbody>${list.map((p, n) => `<tr class="border-b"><td class="p-2">${n + 1}</td><td>${p.fy}</td><td class="font-mono">${p.mid}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date || "-"}</td><td>${fmt(p.amount)}</td><td>${p.method || "-"}</td><td>${statusChip(p.status)}</td><td>${p.status !== "Voided" ? `<button class="text-rose-600 underline" onclick="voidPayment(${p.id})">Void/Delete</button>` : `<span class="text-slate-500">${p.voidReason || "Voided"}</span>`}</td></tr>`).join("") || `<tr><td colspan="10" class="p-4 text-center text-slate-500">No payments found</td></tr>`}</tbody></table></div>`;
   box.querySelector("[data-pm-clear]").addEventListener("click", () => { box.querySelector("[data-pm-q]").value = ""; box.querySelector("[data-pm-year]").value = "ALL"; box.querySelector("[data-pm-inst]").value = "ALL"; box.querySelector("[data-pm-status]").value = "ALL"; box.querySelector("[data-pm-date]").value = ""; renderPaymentManagement(); });
 }
-function addMonthsDate(start, month) { const d = new Date(start + "T00:00:00"); d.setMonth(d.getMonth() + month); return d; }
+const validISO = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s || "")) return false; const [y, m, d] = s.split("-").map(Number); return m >= 1 && m <= 12 && d >= 1 && d <= new Date(y, m, 0).getDate(); };
+// one installment per calendar month from the start month to the end month (12 for a normal year);
+// due day is clamped to the month length (Feb 29/28, 30-day months) and dates are built without timezone conversion
+function genIncomeYearInstallments(name, startDate, endDate, amount, dueDay) {
+  const out = []; let [y, m] = startDate.split("-").map(Number); const [ey, em] = endDate.split("-").map(Number);
+  while (y * 12 + m <= ey * 12 + em && out.length < 36) {
+    const day = Math.min(dueDay, new Date(y, m, 0).getDate());
+    out.push({ id: `iy-${slugId(name)}-${out.length + 1}`, name: MONTH_FULL[m - 1] + "/" + String(y).slice(-2), dueDate: `${y}-${pad2(m)}-${pad2(day)}`, amount, status: "Active" });
+    if (++m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+const MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 function renderIncomeYearManagement() {
   const box = $("admin-years"); if (!box || !isAdmin()) return;
   box.innerHTML = `<form id="income-year-form" class="grid md:grid-cols-6 gap-2 mb-4"><input id="iy-name" class="inp" placeholder="Income Year (2027-28)" required><input id="iy-start" type="date" class="inp" required><input id="iy-end" type="date" class="inp" required><input id="iy-amount" type="number" min="1" class="inp" placeholder="Monthly Amount" required><input id="iy-day" type="number" min="1" max="31" class="inp" placeholder="Due Day" value="25" required><button class="bg-emerald-600 text-white rounded-lg px-3 py-2">Create Income Year</button></form>${incomeYears.map(y => `<div class="border rounded-lg p-3 mb-3"><div class="flex flex-wrap gap-2 items-center"><input class="border rounded p-1 font-semibold" value="${y.name}" onchange="editIncomeYear('${y.id}','name',this.value)"><input type="date" class="border rounded p-1" value="${y.startDate}" onchange="editIncomeYear('${y.id}','startDate',this.value)"><input type="date" class="border rounded p-1" value="${y.endDate}" onchange="editIncomeYear('${y.id}','endDate',this.value)"><input type="number" class="border rounded p-1 w-28" value="${y.defaultAmount}" onchange="editIncomeYear('${y.id}','defaultAmount',this.value)"><input type="number" class="border rounded p-1 w-20" value="${y.dueDay}" onchange="editIncomeYear('${y.id}','dueDay',this.value)"><select class="border rounded p-1" onchange="editIncomeYear('${y.id}','status',this.value)"><option ${y.status === "Active" ? "selected" : ""}>Active</option><option ${y.status === "Inactive" ? "selected" : ""}>Inactive</option></select></div><div class="overflow-x-auto mt-3"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th>SL</th><th>Name</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Payments</th><th>Action</th></tr></thead><tbody>${(y.installments || []).map((i, n) => `<tr class="border-b"><td>${n + 1}</td><td><input class="border rounded p-1" value="${i.name}" onchange="editInstallment('${y.id}','${i.id}','name',this.value)"></td><td><input type="date" class="border rounded p-1" value="${i.dueDate}" onchange="editInstallment('${y.id}','${i.id}','dueDate',this.value)"></td><td><input type="number" class="border rounded p-1 w-24" value="${i.amount}" onchange="editInstallment('${y.id}','${i.id}','amount',this.value)"></td><td><select class="border rounded p-1" onchange="editInstallment('${y.id}','${i.id}','status',this.value)"><option ${i.status === "Active" ? "selected" : ""}>Active</option><option ${i.status === "Inactive" ? "selected" : ""}>Inactive</option></select></td><td>${payments.filter(p => p.fy === y.name && (p.instId === i.id || p.inst === i.legacyKey || p.inst === i.name)).length}</td><td><button class="text-rose-600" onclick="archiveInstallment('${y.id}','${i.id}');return false">Archive</button></td></tr>`).join("")}</tbody></table></div></div>`)}`;
   $("income-year-form").onsubmit = e => { e.preventDefault(); createIncomeYear(); };
 }
-function createIncomeYear() { if (!isAdmin()) return; const name = $("iy-name").value.trim(), startDate = $("iy-start").value, endDate = $("iy-end").value, defaultAmount = Number($("iy-amount").value), dueDay = Number($("iy-day").value); if (!name || !startDate || !endDate || endDate < startDate || defaultAmount <= 0 || dueDay < 1 || dueDay > 31 || incomeYears.some(y => y.name === name)) return toast("Income Year details সঠিক নয় বা আগে থেকেই আছে"); const start = new Date(startDate + "T00:00:00"), months = []; for (let n = 0; n < 12; n++) { const d = addMonthsDate(start, n); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(dueDay, last)); months.push({ id: `iy-${slugId(name)}-${n + 1}`, name: d.toLocaleString("en", { month: "long" }) + "/" + String(d.getFullYear()).slice(-2), dueDate: d.toISOString().slice(0, 10), amount: defaultAmount, status: "Active" }); } incomeYears.push({ id: `iy-${slugId(name)}-${Date.now()}`, name, startDate, endDate, defaultAmount, dueDay, status: "Active", installments: months }); saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); startApp(); toast("Income Year created with 12 installments"); }
+function createIncomeYear() {
+  if (!isAdmin()) return;
+  const name = $("iy-name").value.trim(), startDate = $("iy-start").value, endDate = $("iy-end").value, defaultAmount = Number($("iy-amount").value), dueDay = Number($("iy-day").value);
+  if (!/^\d{4}-\d{2}$/.test(name)) return toast("Income Year নাম এই ফরম্যাটে দিন: 2027-28");
+  if (!validISO(startDate) || !validISO(endDate) || endDate <= startDate) return toast("সঠিক Start Date ও End Date দিন (End Date পরে হতে হবে)");
+  if (!(defaultAmount > 0)) return toast("Monthly Amount ০-এর বেশি হতে হবে");
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return toast("Due Day ১ থেকে ৩১-এর মধ্যে হতে হবে");
+  if (incomeYears.some(y => y.name === name)) return toast(`"${name}" Income Year আগে থেকেই আছে`);
+  const clash = incomeYears.find(y => y.status !== "Inactive" && startDate <= y.endDate && endDate >= y.startDate);
+  if (clash) return toast(`এই সময় "${clash.name}"-এর সাথে মিলে যাচ্ছে`);
+  const installments = genIncomeYearInstallments(name, startDate, endDate, defaultAmount, dueDay);
+  incomeYears.push({ id: `iy-${slugId(name)}-${Date.now()}`, name, startDate, endDate, defaultAmount, dueDay, status: "Active", installments });
+  saveIncomeYears(); refreshYearsFromModel();
+  const sel = $("fy-select"), keep = sel.value; sel.innerHTML = Object.keys(YEARS).reverse().map(y => `<option>${y}</option>`).join(""); sel.value = YEARS[keep] ? keep : sel.value;
+  renderIncomeYearManagement(); refreshAll(); renderEntryOptions();
+  toast(`Income Year ${name} তৈরি হয়েছে — ${installments.length} টি কিস্তি স্বয়ংক্রিয়ভাবে যোগ হয়েছে`);
+}
 function editIncomeYear(id, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === id); if (!y) return; if (field === "name" && incomeYears.some(x => x.id !== id && x.name === value.trim())) return toast("Income Year already exists"); y[field] = ["defaultAmount", "dueDay"].includes(field) ? Number(value) : value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
-function editInstallment(yid, iid, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; i[field] = field === "amount" ? Number(value) : value; if (field === "name" && !i.legacyKey) i.legacyKey = value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
+function editInstallment(yid, iid, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (field === "name" && !i.legacyKey) i.legacyKey = i.name;   /* old name kept so older payments stay linked */ i[field] = field === "amount" ? Number(value) : value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
 function archiveInstallment(yid, iid) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (payments.some(p => p.fy === y.name && (p.instId === iid || p.inst === i.legacyKey || p.inst === i.name))) return toast("Payment associated — deactivate instead of deleting"); if (confirm("Installment archive করবেন?")) { i.status = "Inactive"; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); } }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
 function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); refreshAll(); }

@@ -93,27 +93,25 @@ function finCompute(asOfIn, fy = "ALL", txs = FTX) {
   });
   const bump = (k, v) => { B[k] = (B[k] || 0) + v; };
   const settle = {}; txs.filter(t => t.type === "payout").forEach(t => { if (!settle[t.mid] || t.date < settle[t.mid]) settle[t.mid] = t.date; });
-  const mem = {}; MEMBERS.forEach(m => { const o = FIN_MEM[m.mid] || {}; mem[m.mid] = { m, inv: o.inv || 0, fee: o.fee || 0, openDue: o.due || 0, note: o.note || "", oldPaid: 0, newDue: 0, payout: 0, settledOn: null, add: 0, ded: 0, receivable: null }; });
+  const mem = {}; MEMBERS.forEach(m => { const o = FIN_MEM[m.mid] || {}; mem[m.mid] = { m, inv: o.inv || 0, fee: o.fee || 0, openDue: o.due || 0, note: o.note || "", oldPaid: 0, newDue: 0, payout: 0, settledOn: null, add: 0, ded: 0, receivable: null, recv: 0 }; });
   const ev = [{ d: "", t: "add", a: O.inc.profit + O.inc.interest + O.inc.misc, open: true }, { d: "", t: "ded", a: O.inc.membership + Object.values(O.exp).reduce((s, v) => s + v, 0), open: true }];
   const instOf = p => (YEARS[p.fy] || []).find(i => i.key === p.inst);
-  payments.filter(p => p.status === "Approved" && !["Voided", "Deleted", "Rejected", "Draft"].includes(p.status) && p.date && p.date <= asOf && mem[p.mid]).forEach(p => {
+  let capIn = 0;   // cash really received (Approved only; Voided/Draft/Rejected never)
+  payments.filter(p => paymentCounts(p) && p.date && p.date <= asOf && mem[p.mid]).forEach(p => {
     const x = mem[p.mid], a = p.amount;
     if (p.inst === "Membership Fee") { if (p.date > C) { I.membership += a; bump("ast:bank", a); bump("eqt:ret", a); x.fee += a; x.inv += a; if (inP(p.date)) pI.membership += a; ev.push({ d: p.date, t: "ded", a }); } return; }
     const i = instOf(p), old = p.fy === "2025-26" || (i && i.due <= C);
-    if (old) { if (p.date <= C) return; x.oldPaid += a; bump("ast:bank", a); x.inv += a; }
-    else { bump("ast:bank", a); bump("eqt:cap", a); x.inv += a; }
+    if (old && p.date <= C) return;                       // already inside the Opening Balance
+    bump("ast:bank", a); x.inv += a; capIn += a;
   });
-  // Subscription receivable is calculated by the same installment-level engine as Dashboard.
-  const unifiedReceivable = typeof receivableRows === "function" ? receivableRows(asOf) : [];
-  // Subscription receivable has one source of truth: the installment-level rows.
-  // Do not add FIN_MEM.openDue here; those values are historical opening data and
-  // would double-count balances already represented by legacy installments.
-  const unifiedTotal = unifiedReceivable.reduce((s, r) => s + Math.max(0, Number(r.due || 0)), 0);
-  unifiedReceivable.forEach(r => { if (!mem[r.m.mid]) return; mem[r.m.mid].receivable = r; mem[r.m.mid].newDue = r.due; bump("eqt:cap", r.due); });
+  // Subscription Receivable = receivableRows(): the SAME engine the Dashboard uses (all Income Years, Approved only, due on/before Statement Date)
+  const unifiedReceivable = receivableRows(asOf);
   let recv = 0;
-  Object.values(mem).forEach(x => { const ap = Math.min(x.oldPaid, x.openDue); bump("eqt:cap", x.oldPaid - ap); x.recv = x.receivable ? x.receivable.due : 0; x.applied = ap; recv += x.recv; });
-  // The total is intentionally derived from the same rows used by Dashboard.
-  recv = unifiedTotal;
+  unifiedReceivable.forEach(r => { const x = mem[r.m.mid]; if (!x) return; x.receivable = r; x.newDue = r.due; x.recv = r.due; recv += r.due; });
+  // Opening-Balance receivable (Excel) is replaced by the current one; the difference plus new cash is the change in Capital Equity,
+  // so Assets = Liabilities + Equity holds for every date, including after a payment is voided.
+  const R0 = Object.values(FIN_MEM).reduce((s, o) => s + (o.due || 0), 0);
+  bump("eqt:cap", capIn + recv - R0);
   B["ast:recv"] = recv;
   const post = (e, d) => {
     const a = e.a, per = inP(d);
