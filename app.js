@@ -708,7 +708,7 @@ function voidPayment(id) {
   paymentAudit.push({ id: `pa-${p.id}-${Date.now()}`, paymentId: p.id, deletedBy: session.mid, deletionDate: p.voidedAt, reason: p.voidReason, previousStatus, mid: p.mid, installment: p.inst, amount: p.amount });
   savePaymentAudit(); save(); refreshAll(); toast("Payment Voided হয়েছে — financial effect reverse হয়েছে");
 }
-const delPayment = voidPayment;
+const delPayment = (...args) => voidPayment(...args);   // late-bound: admin-ext.js provides the dialog version
 
 // ---------- Reports ----------
 function summaryRows() {
@@ -938,14 +938,6 @@ function renderAdmin() {
   $("admin-entry").innerHTML = `<label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
     <div class="grid md:grid-cols-2 gap-3 mt-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
     <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>`;
-  $("admin-inst").innerHTML = `<div class="flex items-center justify-between mb-2"><p class="text-sm font-semibold">${fy()} — Installment Management</p>
-    <button onclick="addInstallment()" class="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg">+ New Installment Entry</button></div>
-    <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-100"><tr><th class="p-2 text-left">Installment Name</th><th class="text-left">Due Date</th><th class="text-left">Amount (TK)</th><th class="text-center">Show in Entry Form</th><th></th></tr></thead>
-    <tbody>${insts().map(i => `<tr class="border-b"><td class="p-2"><input type="text" class="border rounded px-2 py-1 w-full" value="${i.key}" onchange="editInstName('${i.key}',this.value)"></td>
-      <td><input type="date" class="border rounded px-2 py-1" value="${i.due}" onchange="editInstDue('${i.key}',this.value)"></td>
-      <td><input type="number" class="border rounded px-2 py-1 w-28" value="${i.amount}" onchange="setAmt('${k(i)}',this.value)"></td>
-      <td class="text-center"><input type="checkbox" ${S.closed.includes(k(i)) ? "" : "checked"} onchange="toggleInst('${k(i)}',this.checked)"></td>
-      <td><button onclick="deleteInstallment('${i.key}')" class="text-rose-600 hover:underline">Delete</button></td></tr>`).join("")}</tbody></table></div>`;
   $("admin-backup").innerHTML = `<div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
     <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
     <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p>`;

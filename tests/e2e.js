@@ -34,19 +34,27 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     ok("Comment months add up to the receivable (all members)", await ev(`finCompute(${T},'ALL').rows.every(x=>{const s=[...(x.receivable?.comment||'').matchAll(/\\((\\d+(?:\\.\\d+)?)\\/-\\)/g)].reduce((a,m)=>a+Number(m[1]),0);return Math.abs(s-x.recv)<.005})`));
     ok("Dashboard has 'Receivable (All Years)' column", await A.locator("#matrix th:has-text('Receivable (All Years)')").count() === 1);
 
-    // ---- Income Year creation (the form in the admin page)
-    await A.click("#nav-admin"); await A.waitForSelector("#income-year-form");
-    await A.fill("#iy-name", "2027-28"); await A.fill("#iy-start", "2027-07-01"); await A.fill("#iy-end", "2028-06-30"); await A.fill("#iy-amount", "2000"); await A.fill("#iy-day", "25");
-    await A.click("#income-year-form button"); await A.waitForTimeout(500);
+    // ---- Income Year creation (new Admin (IT) form)
+    const go = sec => A.evaluate(x => adminNavigate(x, document.querySelector(`[data-admin-target="${x}"]`)), sec);
+    await A.click("#nav-admin"); await go("admin-years-section");
+    ok("Income Year table lists the existing years with Active status", await A.locator("#admin-years tbody tr").count() === 2);
+    await A.click("button:has-text('+ New Income Year')");
+    ok("New-year form is pre-filled (2027-28, 2027-07-01 .. 2028-06-30, 2000, day 25)", await A.inputValue("#iy-name") === "2027-28" && await A.inputValue("#iy-start") === "2027-07-01" && await A.inputValue("#iy-end") === "2028-06-30" && await A.inputValue("#iy-amt") === "2000" && await A.inputValue("#iy-day") === "25");
+    await A.click("button:has-text('Create Income Year')"); await A.waitForTimeout(500);
     const gen = await ev("(incomeYears.find(y=>y.name==='2027-28')||{installments:[]}).installments.map(i=>i.name+'@'+i.dueDate)");
     ok("Create 2027-28 (Asia/Dhaka): 12 installments July/27 … June/28, due on the 25th", gen.length === 12 && gen[0] === "July/27@2027-07-25" && gen[7] === "February/28@2028-02-25" && gen[11] === "June/28@2028-06-25", JSON.stringify(gen));
-    ok("2027-28 appears in the Dashboard year selector", (await ev("[...document.querySelectorAll('#fy-select option')].map(o=>o.value)")).includes("2027-28"));
-    await A.fill("#iy-name", "2027-28"); await A.fill("#iy-start", "2029-07-01"); await A.fill("#iy-end", "2030-06-30"); await A.fill("#iy-amount", "2000"); await A.fill("#iy-day", "31");
-    await A.click("#income-year-form button");
-    ok("Duplicate Income Year name is rejected", (await ev("document.getElementById('toast').textContent")).includes("আগে থেকেই আছে"));
-    await A.fill("#iy-name", "2029-30"); await A.click("#income-year-form button"); await A.waitForTimeout(400);
+    ok("2027-28 appears in the Dashboard year selector and in the table", (await ev("[...document.querySelectorAll('#fy-select option')].map(o=>o.value)")).includes("2027-28") && await A.locator("#admin-years tbody tr:has-text('2027-28')").count() === 1);
+    await A.click("button:has-text('+ New Income Year')"); await A.fill("#iy-name", "2027-28"); await A.fill("#iy-start", "2029-07-01"); await A.fill("#iy-end", "2030-06-30"); await A.fill("#iy-day", "31");
+    await A.click("button:has-text('Create Income Year')");
+    ok("Duplicate Income Year name is rejected with a message", (await A.locator("#iy-err").innerText()).includes("আগে থেকেই আছে"));
+    await A.fill("#iy-name", "27-28"); await A.click("button:has-text('Create Income Year')");
+    ok("Bad name format is rejected", (await A.locator("#iy-err").innerText()).includes("ফরম্যাটে"));
+    await A.fill("#iy-name", "2029-30"); await A.click("button:has-text('Create Income Year')"); await A.waitForTimeout(400);
     const g2 = await ev("incomeYears.find(y=>y.name==='2029-30').installments.map(i=>i.dueDate)");
     ok("Due day 31 -> month end (Feb 2030 = 28, Apr/Jun/Sep/Nov = 30)", g2[7] === "2030-02-28" && g2[9] === "2030-04-30" && g2[11] === "2030-06-30" && g2[2] === "2029-09-30", JSON.stringify(g2));
+    await A.click("button:has-text('+ New Income Year')"); await A.fill("#iy-name", "2030-31"); await A.fill("#iy-start", "2030-01-01"); await A.fill("#iy-end", "2030-12-31"); await A.click("button:has-text('Create Income Year')");
+    ok("Overlapping Income Year dates are rejected", (await A.locator("#iy-err").innerText()).includes("মিলে"));
+    await A.click("button:has-text('Cancel')");
     ok("Leap year: due day 31 in Feb 2028 -> 29", await ev("genIncomeYearInstallments('x','2027-07-01','2028-06-30',1,31)[7].dueDate") === "2028-02-29");
     ok("Server stores the new Income Years", await A.evaluate(() => 1) && [...server.t.app_state.values()].some(r => r.key === "pgcs_income_years_v1" && r.value.some(y => y.name === "2027-28")));
 
@@ -58,7 +66,7 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
 
     // ---- inactive year is excluded everywhere (Dashboard & Statement use the same engine)
     const act = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
-    await ev(`(()=>{const y=incomeYears.find(x=>x.name==='2027-28');editIncomeYear(y.id,'status','Inactive')})()`); await A.waitForTimeout(300);
+    await go("admin-years-section"); await A.locator("#admin-years tbody tr:has-text('2027-28') button:has-text('Deactivate')").click(); await A.waitForTimeout(400);
     const inact = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
     ok("Deactivated Income Year no longer counts in receivable", act - inact === 17 * 2000 * 12 - 0 || act > inact, JSON.stringify({ act, inact }));
     ok("Statement balances with an inactive year", await ev("finCompute('2028-12-31','ALL').diff") === 0);
@@ -78,18 +86,32 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
       editInstallment(y.id,i.id,'name','Renamed Oct');
       const after=receivableRows(${T}).find(r=>r.m.mid===m)?.due||0;return {before,mid,after}})()`);
     ok("Renaming an installment keeps its Approved payments linked (receivable unchanged)", ren.before - ren.mid === 2000 && ren.mid === ren.after, JSON.stringify(ren));
-    const ren2 = await ev(`(()=>{const y=incomeYears.find(x=>x.name==='2025-26');const i=y.installments.find(x=>x.name==='July-25');document.getElementById('fy-select').value='2025-26';const p0=paidOf('PGCS-2101','July-25');editInstallment(y.id,i.id,'name','July Renamed');document.getElementById('fy-select').value='2025-26';return {p0,p1:paidOf('PGCS-2101',i.id)}})()`);
-    ok("Legacy payments (no instId) stay linked after rename", ren2.p0 === 2000 && ren2.p1 === 2000, JSON.stringify(ren2));
-
+    await go("admin-installments-section"); await A.selectOption("#admin-inst select", { label: "2025-26" });
+    const p0 = await ev("(document.getElementById('fy-select').value='2025-26', paidOf('PGCS-2101','July-25'))");
+    const inp = A.locator("#admin-inst tbody tr").filter({ has: A.locator("input[value='July-25']") }).first().locator("input").first();
+    await inp.fill("July Renamed"); await inp.blur(); await A.waitForTimeout(400);
+    ok("Installment renamed in the Installment Management table", await ev("incomeYears.find(y=>y.name==='2025-26').installments.some(i=>i.name==='July Renamed')"));
+    ok("Legacy payments (no instId) stay linked after rename", p0 === 2000 && await ev("(document.getElementById('fy-select').value='2025-26', paidOf('PGCS-2101',incomeYears.find(y=>y.name==='2025-26').installments.find(i=>i.name==='July Renamed').id))") === 2000, String(p0));
+    ok("Installment with payments shows a lock instead of Delete", await A.locator("#admin-inst tbody tr").filter({ has: A.locator("input[value='July Renamed']") }).first().locator("button:has-text('Delete')").count() === 0);
     // ---- Void
     const ap = await ev("payments.find(p=>p.status==='Approved'&&p.mid==='PGCS-2114'&&p.inst==='May-26')");
     const r1 = await ev(`finCompute(${T},'ALL').rows.find(x=>x.m.mid==='PGCS-2114').recv`);
-    await ev(`voidPayment(${ap.id})`); await A.waitForTimeout(400);
+    await go("admin-payments-section"); await A.fill("#pm-mid", "PGCS-2114"); await A.selectOption("#pm-status", "Approved"); await A.fill("#pm-inst", "May-26"); await A.waitForTimeout(250);
+    ok("Payment Management filters narrow the table (MID + Approved + Installment)", await A.locator("#pm-body tbody tr").count() === 1);
+    await A.click("#pm-body button:has-text('Delete (Void)')");
+    ok("Confirmation dialog shows Payment ID, MID, Installment, Amount and Status", await ev("['Payment ID','MID','Installment','Amount','Status'].every(k=>document.getElementById('void-details').textContent.includes(k))"));
+    await A.click("button:has-text('Confirm Delete (Void)')");
+    ok("Deletion reason is mandatory", (await A.locator("#void-err").innerText()).includes("কারণ") && await ev(`payments.find(p=>p.id===${ap.id}).status`) === "Approved");
+    await A.fill("#void-reason", "ভুল Entry — test"); await A.click("button:has-text('Confirm Delete (Void)')"); await A.waitForTimeout(400);
     const v = await ev(`payments.find(p=>p.id===${ap.id})`), r2 = await ev(`finCompute(${T},'ALL').rows.find(x=>x.m.mid==='PGCS-2114').recv`);
     ok("Void keeps the record: status Voided + reason + by + date + previous status", v.status === "Voided" && v.voidReason && v.voidedBy === "PGCS-2105" && v.voidedAt && v.previousStatus === "Approved", JSON.stringify(v));
     ok("Void reverses the financial effect (receivable +amount) on Statement and Dashboard", r2 - r1 === ap.amount && (await ev(`receivableRows(${T}).find(r=>r.m.mid==='PGCS-2114').due`)) === r2, JSON.stringify({ r1, r2 }));
     ok("Statement still balances after void", await ev(`finCompute(${T},'ALL').diff`) === 0, String(await ev(`finCompute(${T},'ALL').diff`)));
     ok("Audit history written (Deleted By, Date, Reason, Previous Status)", await ev(`paymentAudit.some(a=>a.paymentId===${ap.id}&&a.deletedBy&&a.deletionDate&&a.reason&&a.previousStatus==='Approved')`));
+    await A.fill("#pm-inst", ""); await A.selectOption("#pm-status", "Voided"); await A.waitForTimeout(250);
+    await A.click("#pm-body button:has-text('Audit')"); await A.waitForTimeout(150);
+    ok("Audit dialog shows Deleted By / Date / Reason / Previous Status", await ev("['Deleted By','Deletion Date','Reason','Previous Status','PGCS-2105'].every(k=>document.getElementById('info-body').textContent.includes(k))"));
+    await A.click("#info-modal button:has-text('×')");
     const dr = await ev("(()=>{const p={id:987654321,fy:'2026-27',mid:'PGCS-2101',inst:'Sept-26',method:'Cash Payment',date:'2026-11-01',amount:2000,status:'Draft'};payments.push(p);save();voidPayment(p.id);return payments.find(x=>x.id===p.id).status})()");
     ok("Only Approved payments can be voided (Draft stays Draft)", dr === "Draft", dr);
     await B.waitForFunction(() => payments.some(p => p.status === "Voided"), null, { timeout: 12000 });
