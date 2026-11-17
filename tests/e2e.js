@@ -36,7 +36,7 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
 
     // ---- Income Year creation (new Admin (IT) form)
     const go = sec => A.evaluate(x => adminNavigate(x, document.querySelector(`[data-admin-target="${x}"]`)), sec);
-    await A.click("#nav-admin"); await go("admin-years-section");
+    await A.click("#nav-admin"); await go("admin-entry-section");
     ok("Income Year table lists the existing years with Active status", await A.locator("#admin-years tbody tr").count() === 2);
     await A.click("button:has-text('+ New Income Year')");
     ok("New-year form is pre-filled (2027-28, 2027-07-01 .. 2028-06-30, 2000, day 25)", await A.inputValue("#iy-name") === "2027-28" && await A.inputValue("#iy-start") === "2027-07-01" && await A.inputValue("#iy-end") === "2028-06-30" && await A.inputValue("#iy-amt") === "2000" && await A.inputValue("#iy-day") === "25");
@@ -59,14 +59,35 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     ok("Server stores the new Income Years", await A.evaluate(() => 1) && [...server.t.app_state.values()].some(r => r.key === "pgcs_income_years_v1" && r.value.some(y => y.name === "2027-28")));
 
     // ---- second device sees it without refresh
+
+    // ---- Payment Entry Settings (one merged section): methods / bank / accounts / form switch
+    await go("admin-entry-section");
+    ok("Merged section: methods, Income Years and Installments are all inside Payment Entry Settings", await A.locator("#admin-entry-section #admin-entry, #admin-entry-section #admin-years, #admin-entry-section #admin-inst").count() === 3 && await A.locator("#admin-subnav button:has-text('Income Years'), #admin-subnav button:has-text('Installments')").count() === 0);
+    await A.fill("#es-new-method", "bKash"); await A.click("#admin-entry button:has-text('+ Add')"); await A.waitForTimeout(250);
+    ok("Add Payment Method -> appears in the Entry Form", await ev("[...document.querySelectorAll('#entry-method option')].map(o=>o.value).includes('bKash') && S.methods.includes('bKash')"));
+    await A.fill("#es-new-method", "bkash"); await A.click("#admin-entry button:has-text('+ Add')");
+    ok("Duplicate Payment Method is rejected", (await ev("document.getElementById('toast').textContent")).includes("আগে থেকেই") && await ev("S.methods.filter(m=>m.toLowerCase()==='bkash').length") === 1);
+    const mi = await ev("S.methods.indexOf('bKash')");
+    await A.locator("#admin-entry input").nth(1 + mi).fill("Nagad"); await A.locator("#admin-entry input").nth(1 + mi).blur(); await A.waitForTimeout(250);
+    ok("Rename Payment Method", await ev("S.methods.includes('Nagad') && !S.methods.includes('bKash') && [...document.querySelectorAll('#entry-method option')].map(o=>o.value).includes('Nagad')"));
+    await A.locator("#admin-entry button:has-text('✕ Remove')").nth(mi).click(); await A.waitForTimeout(250);
+    ok("Remove Payment Method -> gone from the Entry Form", await ev("!S.methods.includes('Nagad') && ![...document.querySelectorAll('#entry-method option')].map(o=>o.value).includes('Nagad')"));
+    ok("Cannot remove the last Payment Method", await ev("(()=>{const keep=[...S.methods];S.methods=['Only'];esRemoveMethod(0);const r=S.methods.length===1;S.methods=keep;return r})()"));
+    await A.fill("#es-new-account", "9876543210"); await A.click("#admin-entry button:has-text('+ Add') >> nth=1"); await A.waitForTimeout(250);
+    ok("Add Account No -> available in the Entry Form", await ev("S.accounts.includes('9876543210') && [...document.querySelectorAll('#entry-account option')].map(o=>o.value).includes('9876543210')"));
+    await A.locator("#admin-entry button:has-text('✕ Remove')").last().click(); await A.waitForTimeout(250);
+    ok("Remove Account No", await ev("!S.accounts.includes('9876543210')"));
+    await A.fill("#es-new-method", "Rocket"); await A.click("#admin-entry button:has-text('+ Add') >> nth=0"); await A.waitForTimeout(250);
     const B = await device("B", "PGCS-2114");
     await B.waitForFunction(() => Object.keys(YEARS).includes("2027-28"), null, { timeout: 12000 });
     ok("Device B receives Income Year 2027-28 automatically", true);
+    await B.waitForFunction(() => S.methods.includes("Rocket"), null, { timeout: 12000 });
+    ok("Device B receives the new Payment Method (Rocket) automatically", await B.evaluate(() => [...document.querySelectorAll("#entry-method option")].map(o => o.value).includes("Rocket")));
     ok("Member cannot reach Admin page", await B.evaluate(() => !canAccessPage("admin")));
 
     // ---- inactive year is excluded everywhere (Dashboard & Statement use the same engine)
     const act = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
-    await go("admin-years-section"); await A.locator("#admin-years tbody tr:has-text('2027-28') button:has-text('Deactivate')").click(); await A.waitForTimeout(400);
+    await go("admin-entry-section"); await A.locator("#admin-years tbody tr:has-text('2027-28') button:has-text('Deactivate')").click(); await A.waitForTimeout(400);
     const inact = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
     ok("Deactivated Income Year no longer counts in receivable", act - inact === 17 * 2000 * 12 - 0 || act > inact, JSON.stringify({ act, inact }));
     ok("Statement balances with an inactive year", await ev("finCompute('2028-12-31','ALL').diff") === 0);
@@ -86,7 +107,7 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
       editInstallment(y.id,i.id,'name','Renamed Oct');
       const after=receivableRows(${T}).find(r=>r.m.mid===m)?.due||0;return {before,mid,after}})()`);
     ok("Renaming an installment keeps its Approved payments linked (receivable unchanged)", ren.before - ren.mid === 2000 && ren.mid === ren.after, JSON.stringify(ren));
-    await go("admin-installments-section"); await A.selectOption("#admin-inst select", { label: "2025-26" });
+    await go("admin-entry-section"); await A.selectOption("#admin-inst select", { label: "2025-26" });
     const p0 = await ev("(document.getElementById('fy-select').value='2025-26', paidOf('PGCS-2101','July-25'))");
     const inp = A.locator("#admin-inst tbody tr").filter({ has: A.locator("input[value='July-25']") }).first().locator("input").first();
     await inp.fill("July Renamed"); await inp.blur(); await A.waitForTimeout(400);

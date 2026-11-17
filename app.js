@@ -935,9 +935,7 @@ function renderAdmin() {
   const k = i => fy() + "|" + i.key;
   renderPaymentManagement(); renderIncomeYearManagement();
   if (typeof renderFinConfig === "function") renderFinConfig();
-  $("admin-entry").innerHTML = `<label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members</label>
-    <div class="grid md:grid-cols-2 gap-3 mt-3"><div><label class="lbl">Payment Method (comma separated)</label><input class="inp" value="${S.methods.join(", ")}" onchange="setS('methods',this.value.split(',').map(x=>x.trim()).filter(Boolean))"></div>
-    <div><label class="lbl">Default Bank</label><input class="inp" value="${S.bank}" onchange="setS('bank',this.value)"></div></div>`;
+  if (typeof renderEntrySettings === "function") renderEntrySettings();
   $("admin-backup").innerHTML = `<div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
     <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
     <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p>`;

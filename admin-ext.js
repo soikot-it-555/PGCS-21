@@ -158,7 +158,7 @@ function iyEdit(id) {
 }
 function iyOpenInst(id) {
   iySel = id; renderIncomeYearManagement();
-  adminNavigate("admin-installments-section", document.querySelector('[data-admin-target="admin-installments-section"]'));
+  $("admin-inst").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function iySaveForm() {
   const f = iyForm, err = m => { $("iy-err").textContent = m; $("iy-err").classList.remove("hidden"); return false; };
@@ -257,4 +257,77 @@ function iyViewPayments(yid, iid) {
   const y = iyYear(yid), i = y?.installments.find(x => x.id === iid); if (!i) return;
   const rows = instPayments(y, i).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   openInfo(`${y.name} — ${i.name}: Payments`, `<table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr class="[&>th]:p-2"><th>SL</th><th>MID</th><th>Name</th><th>Date</th><th class="text-right">Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>${rows.map((p, k) => `<tr class="border-t"><td class="p-2">${k + 1}</td><td>${esc(p.mid)}</td><td>${esc(member(p.mid)?.name || "")}</td><td>${esc(p.date || "")}</td><td class="text-right">${fmt(p.amount)}</td><td>${esc(p.method || "")}</td><td>${statusChip(p.status)}</td></tr>`).join("")}</tbody></table>`);
+}
+
+// =====================================================================
+// 4. PAYMENT ENTRY SETTINGS (one section: form on/off, payment methods, bank, account numbers, Income Years, Installments)
+// =====================================================================
+const methodUse = m => payments.filter(p => p.method === m).length;
+function renderEntrySettings() {
+  const root = $("admin-entry"); if (!root || !isAdmin()) return;
+  const keep = { m: $("es-new-method")?.value || "", a: $("es-new-account")?.value || "" };      // typed text survives background refreshes
+  root.innerHTML = `
+    <label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members <span class="text-xs text-slate-500">(বন্ধ থাকলে শুধু Admin Entry দিতে পারে)</span></label>
+    <div class="grid lg:grid-cols-2 gap-5 mt-5">
+      <div><p class="font-semibold text-sm mb-2">Payment Methods</p>
+        <div class="space-y-2">${S.methods.map((m, i) => `<div class="flex gap-2"><input class="border rounded-lg px-2 py-1.5 text-sm flex-1" value="${attr(m)}" onchange="esRenameMethod(${i},this.value)"><button class="text-rose-600 text-sm px-2 hover:underline" onclick="esRemoveMethod(${i})" title="Remove">✕ Remove</button></div>`).join("")}</div>
+        <div class="flex gap-2 mt-2"><input id="es-new-method" class="border rounded-lg px-2 py-1.5 text-sm flex-1" placeholder="নতুন Payment Method (যেমন: bKash)" value="${attr(keep.m)}" onkeydown="if(event.key==='Enter')esAddMethod()"><button class="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg" onclick="esAddMethod()">+ Add</button></div>
+        <p class="text-xs text-slate-500 mt-2">নাম বদলালে বা মুছলে পুরনো Payment-এর রেকর্ড অপরিবর্তিত থাকে। কমপক্ষে একটি Method থাকতে হবে।</p></div>
+      <div><p class="font-semibold text-sm mb-2">Default Bank</p>
+        <input class="border rounded-lg px-2 py-1.5 text-sm w-full" value="${attr(S.bank)}" onchange="esSetBank(this.value)">
+        <p class="font-semibold text-sm mt-5 mb-2">Account Numbers (Entry Form-এ যোগ করা)</p>
+        <div class="space-y-2">${(S.accounts || []).map((a, i) => `<div class="flex gap-2"><input class="border rounded-lg px-2 py-1.5 text-sm flex-1 font-mono" value="${attr(a)}" onchange="esRenameAccount(${i},this.value)"><button class="text-rose-600 text-sm px-2 hover:underline" onclick="esRemoveAccount(${i})">✕ Remove</button></div>`).join("") || '<p class="text-xs text-slate-400">কোনো অতিরিক্ত Account নেই</p>'}</div>
+        <div class="flex gap-2 mt-2"><input id="es-new-account" class="border rounded-lg px-2 py-1.5 text-sm flex-1 font-mono" placeholder="নতুন Account No" value="${attr(keep.a)}" onkeydown="if(event.key==='Enter')esAddAccount()"><button class="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg" onclick="esAddAccount()">+ Add</button></div>
+        <p class="text-xs text-slate-500 mt-2">সদস্যদের নিজস্ব Account No (Members & Login থেকে) এবং ডিফল্ট Account আগের মতোই Entry Form-এ আসে।</p></div>
+    </div>`;
+}
+function esSave(patch, msg) {
+  if (!isAdmin()) return toast(NO_PERM);
+  Object.assign(S, patch); saveS(); renderEntryOptions(); renderEntrySettings(); toast(msg);
+}
+function esAddMethod() {
+  if (!isAdmin()) return toast(NO_PERM);
+  const v = $("es-new-method").value.trim();
+  if (!v) return toast("Payment Method-এর নাম লিখুন");
+  if (S.methods.some(m => m.toLowerCase() === v.toLowerCase())) return toast("এই Payment Method আগে থেকেই আছে");
+  $("es-new-method").value = ""; esSave({ methods: [...S.methods, v] }, `"${v}" যোগ হয়েছে`);
+}
+function esRenameMethod(i, value) {
+  const v = String(value || "").trim(), old = S.methods[i];
+  if (!v) { renderEntrySettings(); return toast("নাম খালি রাখা যাবে না"); }
+  if (v === old) return;
+  if (S.methods.some((m, k) => k !== i && m.toLowerCase() === v.toLowerCase())) { renderEntrySettings(); return toast("এই নামে Method আগে থেকেই আছে"); }
+  const n = methodUse(old);
+  if (n && !confirm(`"${old}" দিয়ে ${n} টি Payment আছে — সেগুলো পুরনো নামেই থাকবে। নাম বদলাবেন?`)) return renderEntrySettings();
+  esSave({ methods: S.methods.map((m, k) => k === i ? v : m) }, "Payment Method হালনাগাদ হয়েছে");
+}
+function esRemoveMethod(i) {
+  if (!isAdmin()) return toast(NO_PERM);
+  if (S.methods.length <= 1) return toast("কমপক্ষে একটি Payment Method থাকতে হবে");
+  const m = S.methods[i], n = methodUse(m);
+  if (!confirm(`"${m}" মুছে ফেলবেন?${n ? ` (এই Method-এর ${n} টি পুরনো Payment অপরিবর্তিত থাকবে)` : ""}`)) return;
+  esSave({ methods: S.methods.filter((_, k) => k !== i) }, `"${m}" মুছে ফেলা হয়েছে`);
+}
+function esSetBank(value) {
+  const v = String(value || "").trim(); if (!v) { renderEntrySettings(); return toast("Bank-এর নাম খালি রাখা যাবে না"); }
+  esSave({ bank: v }, "Default Bank হালনাগাদ হয়েছে");
+}
+function esAddAccount() {
+  if (!isAdmin()) return toast(NO_PERM);
+  const v = $("es-new-account").value.trim();
+  if (!v) return toast("Account No লিখুন");
+  if (accountNumbers().includes(v)) return toast("এই Account No আগে থেকেই আছে");
+  $("es-new-account").value = ""; esSave({ accounts: [...(S.accounts || []), v] }, "Account No যোগ হয়েছে");
+}
+function esRenameAccount(i, value) {
+  const v = String(value || "").trim(), old = S.accounts[i];
+  if (!v) { renderEntrySettings(); return toast("Account No খালি রাখা যাবে না"); }
+  if (v === old) return;
+  if (accountNumbers().includes(v)) { renderEntrySettings(); return toast("এই Account No আগে থেকেই আছে"); }
+  esSave({ accounts: S.accounts.map((a, k) => k === i ? v : a) }, "Account No হালনাগাদ হয়েছে");
+}
+function esRemoveAccount(i) {
+  if (!isAdmin()) return toast(NO_PERM);
+  if (!confirm(`"${S.accounts[i]}" Account মুছে ফেলবেন? (পুরনো Payment অপরিবর্তিত থাকবে)`)) return;
+  esSave({ accounts: S.accounts.filter((_, k) => k !== i) }, "Account No মুছে ফেলা হয়েছে");
 }
