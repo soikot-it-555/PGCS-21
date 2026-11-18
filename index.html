@@ -4,13 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PGCS-21 Financial Management Portal</title>
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#059669" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="PGCS-21" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="Pictures/PGCS-21_Logo.png" />
   <link rel="apple-touch-icon" href="Pictures/pgcs-app-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -21,55 +23,74 @@
 <body class="bg-slate-50 text-slate-800 font-sans">
 
 <!-- LOGIN -->
-<div id="login-screen" class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-  <form id="loginForm" class="bg-white p-8 rounded-2xl shadow w-full max-w-sm space-y-4">
-    <img src="Pictures/PGCS-21_Logo.png" class="h-24 mx-auto" alt="PGCS-21" />
-    <h1 class="text-center font-bold text-slate-800">Pashchimanchal Gas Co-operative Society (PGCS)-21</h1>
-    <select id="login-user" required autocomplete="username" class="w-full border rounded-lg p-2.5 bg-white"><option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option></select>
-    <input id="login-pass" type="password" autocomplete="current-password" required class="w-full border rounded-lg p-2.5" placeholder="Password" />
-    <p id="login-err" class="text-rose-600 text-sm hidden"></p>
-    <p id="db-status" class="text-center text-sm text-slate-500"></p>
-    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg">Login</button>
-    <button type="button" id="install-app" class="hidden w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-lg">Install PGCS-21 App</button>
-  </form>
+<div id="login-screen" class="login-wrap">
+  <section class="login-hero">
+    <div class="hero-brand"><img src="Pictures/PGCS-21_Logo.png" alt="PGCS-21" /><div><b>PGCS-21</b><span>Pashchimanchal Gas Co-operative Society</span></div></div>
+    <div class="hero-copy">
+      <h2>Financial Management Portal</h2>
+      <p>A Halal Way of Investment — সদস্যদের কিস্তি, হিসাব ও আর্থিক বিবরণী এক জায়গায়, স্বচ্ছভাবে।</p>
+    </div>
+    <ul class="hero-points">
+      <li><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg></i>সব ডিভাইসে রিয়েল-টাইম সিঙ্ক</li>
+      <li><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></i>স্বচ্ছ Payment, Approval ও Audit ইতিহাস</li>
+      <li><i><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg></i>স্বয়ংক্রিয় Financial Statement ও Receivable</li>
+    </ul>
+  </section>
+  <section class="login-panel">
+    <form id="loginForm" class="login-card">
+      <h1>স্বাগতম</h1>
+      <p class="lead">আপনার নাম বেছে নিন এবং Password দিয়ে প্রবেশ করুন।</p>
+      <div class="field"><label class="fld" for="login-user">সদস্য</label>
+        <select id="login-user" required autocomplete="username" class="bg-white"><option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option></select></div>
+      <div class="field"><label class="fld" for="login-pass">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" required placeholder="Password" /></div>
+      <p id="login-err" class="text-rose-600 text-sm hidden mb-3"></p>
+      <p id="db-status" class="text-center text-sm text-slate-500"></p>
+      <button class="btn-primary">Login</button>
+      <button type="button" id="install-app" class="hidden btn-dark w-full py-2.5 font-semibold mt-3">Install PGCS-21 App</button>
+      <p class="login-foot">Pashchimanchal Gas Co-operative Society (PGCS)-21</p>
+    </form>
+  </section>
 </div>
 
 <!-- APP -->
 <div id="app" class="hidden flex min-h-screen flex-col md:flex-row">
-  <aside class="w-full md:w-60 bg-slate-900 text-white flex flex-col md:fixed md:h-full md:overflow-y-auto z-10">
-    <div class="p-3 md:p-5 border-b border-slate-800 text-center">
-      <img src="Pictures/PGCS-21_Logo.png" class="h-16 mx-auto bg-white rounded-full p-1" alt="" />
-      <h1 class="font-bold text-emerald-400 mt-2">PGCS-21 Portal</h1>
-      <p id="who" class="text-xs text-slate-400 mt-1"></p>
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <img src="Pictures/PGCS-21_Logo.png" class="sb-logo" alt="" />
+      <div><div class="sb-title">PGCS-21</div><div class="sb-sub">Financial Portal</div></div>
     </div>
-    <nav class="flex-1 p-2 md:p-3 grid grid-cols-2 md:flex md:flex-col gap-1 text-sm">
-      <button onclick="showPage('dashboard')" id="nav-dashboard" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📊 Dashboard</button>
-      <button onclick="showPage('entry')" id="nav-entry" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">➕ Payment Entry</button>
-      <button onclick="showPage('member-detail')" id="nav-member-detail" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">👤 Members' Detail</button>
-      <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">✅ <span id="nav-approvals-label">Approvals</span></button>
-      <button onclick="showPage('admin')" id="nav-admin" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">🛠 Admin (IT)</button>
-      <button onclick="showPage('financial')" id="nav-financial" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">💰 Financial Statement</button>
-      <button onclick="showPage('reports')" id="nav-reports" class="nav-btn w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg">📄 Reports</button>
+    <div class="sb-label">Menu</div>
+    <nav class="sb-nav">
+      <button onclick="showPage('dashboard')" id="nav-dashboard" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span>Dashboard</span></button>
+      <button onclick="showPage('entry')" id="nav-entry" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg><span>Payment Entry</span></button>
+      <button onclick="showPage('member-detail')" id="nav-member-detail" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Members' Detail</span></button>
+      <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><span id="nav-approvals-label">Approvals</span></button>
+      <button onclick="showPage('admin')" id="nav-admin" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg><span>Admin (IT)</span></button>
+      <button onclick="showPage('financial')" id="nav-financial" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg><span>Financial Statement</span></button>
+      <button onclick="showPage('reports')" id="nav-reports" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Reports</span></button>
     </nav>
-    <div class="p-3 md:p-4 border-t border-slate-800 text-xs text-slate-400 space-y-2">
-      <p>BASIC Bank PLC<br>A/C: 2914-010019169</p>
-      <button onclick="changePassword()" class="text-sky-400 hover:underline block">Password পরিবর্তন</button>
-      <button id="reset-btn" onclick="resetData()" class="text-rose-400 hover:underline block">Reset to Original Excel</button>
-      <button onclick="logout()" class="text-white bg-slate-700 rounded px-3 py-1.5 w-full">Logout</button>
+    <div class="sb-foot">
+      <div class="sb-user"><span class="dot"></span><p id="who"></p></div>
+      <div class="sb-bank"><b>BASIC Bank PLC</b><br>A/C: 2914-010019169</div>
+      <div class="sb-actions">
+        <button onclick="changePassword()" class="sb-link">Password পরিবর্তন</button>
+        <button id="reset-btn" onclick="resetData()" class="sb-link danger">Reset to Original Excel</button>
+      </div>
+      <button onclick="logout()" class="sb-logout">Logout</button>
     </div>
   </aside>
 
-  <main class="flex-1 md:ml-60 p-3 md:p-6 min-w-0">
-    <div class="flex flex-wrap items-center gap-3 mb-5">
-      <img src="Pictures/Letter_Head.png" class="h-12 hidden xl:block" alt="" />
-      <div class="ml-auto flex items-center gap-2 text-sm">
-        <label>আর্থিক বছর:</label>
-        <select id="fy-select" onchange="refreshAll()" class="border rounded-lg px-3 py-2 bg-white"></select>
-      </div>
+  <main class="app-main">
+    <div class="topbar">
+      <div class="hello"><span>Pashchimanchal Gas Co-operative Society</span><b>Financial Management Portal</b></div>
+      <div class="fy-pill"><label for="fy-select">আর্থিক বছর</label>
+        <select id="fy-select" onchange="refreshAll()"></select></div>
     </div>
 
     <!-- Dashboard -->
     <section id="page-dashboard" class="page-section">
+      <div class="page-head"><h2>Dashboard</h2><p>সদস্যদের জমা, বকেয়া ও মাসভিত্তিক অগ্রগতির সারসংক্ষেপ</p></div>
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5" id="stats"></div>
       <div class="bg-white rounded-xl border p-4 mb-5">
         <h4 class="font-semibold mb-2 text-sm">Monthly Payments (Approved)</h4>

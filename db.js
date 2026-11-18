@@ -74,7 +74,7 @@
   function setPill(text, color) {
     if (!document.body) return;
     if (!pill) {
-      pill = document.createElement("div");
+      pill = document.createElement("div"); pill.id = "db-pill";
       pill.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:90;font-size:11px;padding:3px 8px;border-radius:999px;color:#fff;opacity:.85;pointer-events:none";
       document.body.appendChild(pill);
     }

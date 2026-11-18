@@ -1,6 +1,6 @@
 // Real Chromium end-to-end test of the real index.html + scripts against the in-process fake Supabase.
 // Browser timezone = Asia/Dhaka (UTC+6), clock fixed at 2026-11-15.
-// CDN libraries (Tailwind, Chart.js, SheetJS, jsPDF, supabase-js) are stubbed => PDF/Excel files and Realtime websockets are NOT exercised.
+// Tailwind is built locally (tests/tw-local.js); Chart.js, SheetJS, jsPDF and supabase-js are stubbed => PDF/Excel files and Realtime websockets are NOT exercised.
 const http = require("http"), fs = require("fs"), path = require("path");
 const { chromium } = require("/opt/npm-tools/node_modules/playwright");
 const { Server } = require("./harness.js");
@@ -9,17 +9,19 @@ const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 const results = []; let failed = 0;
 const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", name + (cond ? "" : " :: " + extra)]); if (!cond) failed++; };
 (async () => {
+  const tailwindCss = await require("./tw-local.js")(root);
   const server = new Server();
   // supabase-migration-v3.sql pre-creates these two documents (CAS updates need an existing row)
   for (const k of ["pgcs_income_years_v1", "pgcs_payment_audit_v1"]) server.t.app_state.set(k, { key: k, value: [], version: 1, created_at: new Date().toISOString() + "0000" + k.length, updated_at: new Date().toISOString() });
   const web = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(q.url.split("?")[0]).replace(/^\/$/, "/index.html")); if (!f.startsWith(root) || !fs.existsSync(f)) { r.writeHead(404); return r.end(); } r.writeHead(200, { "Content-Type": mime[path.extname(f)] || "application/octet-stream" }); r.end(fs.readFileSync(f)); }).listen(0);
   const base = "http://127.0.0.1:" + web.address().port + "/index.html";
   const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome", args: ["--no-sandbox"] });
-  const device = async (name, mid) => {
-    const ctx = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 }, timezoneId: "Asia/Dhaka" });
+  const device = async (name, mid, vp = { width: 1280, height: 900 }) => {
+    const ctx = await browser.newContext({ serviceWorkers: "block", viewport: vp, timezoneId: "Asia/Dhaka", reducedMotion: "reduce" });
     await ctx.clock.setFixedTime(new Date("2026-11-15T12:00:00+06:00"));
     await ctx.route("**/rest/v1/**", async route => { const q = route.request(), h = q.headers(); const res = await server.handle(q.url(), { method: q.method(), headers: { Prefer: h.prefer || "" }, body: q.postData() || undefined }); await route.fulfill({ status: res.status, body: await res.text(), contentType: "application/json" }); });
-    await ctx.route(/cdn\.tailwindcss|cdn\.jsdelivr|cdnjs/, route => { const u = route.request().url(); const js = /chart/.test(u) ? "window.Chart=class{constructor(){}destroy(){}};" : /xlsx/.test(u) ? "window.XLSX={utils:{}};" : /jspdf/.test(u) ? "window.jspdf={jsPDF:function(){}};" : ""; route.fulfill({ status: 200, contentType: "text/javascript", body: js }); });
+    await ctx.route(/cdn\.tailwindcss/, route => route.fulfill({ status: 200, contentType: "text/javascript", body: `(()=>{const s=document.createElement("style");s.textContent=${JSON.stringify(tailwindCss)};document.head.appendChild(s)})()` }));
+    await ctx.route(/cdn\.jsdelivr|cdnjs/, route => { const u = route.request().url(); const js = /chart/.test(u) ? "window.Chart=class{constructor(){}destroy(){}};" : /xlsx/.test(u) ? "window.XLSX={utils:{}};" : /jspdf/.test(u) ? "window.jspdf={jsPDF:function(){}};" : ""; route.fulfill({ status: 200, contentType: "text/javascript", body: js }); });
     const P = await ctx.newPage(); P.on("pageerror", e => { console.log(`[${name}] PAGE ERROR:`, e.message); ok(`${name}: no JS error`, false, e.message); });
     P.on("dialog", d => d.accept(d.type() === "prompt" ? "ভুল Entry — test" : undefined));
     await P.goto(base); await P.waitForFunction(() => window.__appReady === true, null, { timeout: 15000 });
@@ -155,6 +157,14 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     await B.waitForFunction(() => payments.some(p => p.status === "Voided"), null, { timeout: 12000 });
     ok("Device B receives the voided payment automatically", true);
     ok("Admin cannot be bypassed: member session cannot void", await B.evaluate(() => { const p = payments.find(x => x.status === "Approved"); voidPayment(p.id); return payments.find(x => x.id === p.id).status === "Approved"; }));
+
+    // ---- responsive design: on a phone only the menu pills stay pinned while scrolling; nothing overflows sideways
+    const M = await device("M-mobile", "PGCS-2114", { width: 390, height: 844 });
+    await M.evaluate(() => { document.body.style.minHeight = "3000px"; window.scrollTo(0, 700); });
+    await M.waitForTimeout(150);
+    ok("Mobile: menu pills stay pinned to the top while scrolling", Math.abs((await M.locator(".sb-nav").boundingBox()).y) < 2);
+    ok("Mobile: page does not scroll sideways", await M.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("Desktop sidebar is fixed 272px wide with the content shifted right", await A.evaluate(() => { const s = document.querySelector(".sidebar").getBoundingClientRect(), m = document.querySelector(".app-main").getBoundingClientRect(); return Math.round(s.width) === 272 && Math.round(m.left) === 272; }));
   } catch (e) { console.log("E2E ABORTED:", e.message); ok("E2E completed", false, e.message); }
   await browser.close(); web.close();
   for (const [r, n] of results) console.log(r, "-", n);
