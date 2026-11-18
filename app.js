@@ -107,6 +107,13 @@ const toast = msg => {
 };
 
 // ---------- Auth ----------
+// Login user selector: every Active member as "Name — MID" (members choose their name instead of typing the MID)
+function renderLoginMembers() {
+  const sel = $("login-user"), keep = sel.value, h = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));   // (esc() lives in finance.js, loaded later)
+  sel.innerHTML = `<option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option>` + MEMBERS.filter(m => m.status === "Active").map(m => `<option value="${h(m.mid)}">${h(m.name)} — ${h(m.mid)}</option>`).join("");
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+renderLoginMembers();
 $("loginForm").addEventListener("submit", e => {
   e.preventDefault();
   const u = $("login-user").value.trim(), p = $("login-pass").value;
@@ -1282,7 +1289,7 @@ function remoteRefresh(what) {
 DB.subscribe("payments", v => { payments = v; remoteRefresh("payments"); });
 DB.subscribe("incomeYears", v => { incomeYears = Array.isArray(v) ? v : []; refreshYearsFromModel(); if (session) startApp(); });
 DB.subscribe("paymentAudit", v => { paymentAudit = Array.isArray(v) ? v : []; });
-DB.subscribe("members", v => { MEMBERS.length = 0; MEMBERS.push(...v); remoteRefresh("members"); });
+DB.subscribe("members", v => { MEMBERS.length = 0; MEMBERS.push(...v); renderLoginMembers(); remoteRefresh("members"); });
 DB.subscribe("passwords", v => { pw = v || {}; });
 DB.subscribe("settings", v => {
   for (const k of Object.keys(S)) delete S[k];

@@ -23,7 +23,16 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     const P = await ctx.newPage(); P.on("pageerror", e => { console.log(`[${name}] PAGE ERROR:`, e.message); ok(`${name}: no JS error`, false, e.message); });
     P.on("dialog", d => d.accept(d.type() === "prompt" ? "ভুল Entry — test" : undefined));
     await P.goto(base); await P.waitForFunction(() => window.__appReady === true, null, { timeout: 15000 });
-    await P.fill("#login-user", mid); await P.fill("#login-pass", "pgcs1234"); await P.click("#loginForm button:has-text('Login')"); await P.waitForSelector("#app:not(.hidden)");
+    if (name === "A") {   // login screen: dropdown of Active members
+      const opts = await P.evaluate(() => [...document.querySelectorAll("#login-user option")].map(o => [o.value, o.textContent]));
+      const active = await P.evaluate(() => MEMBERS.filter(m => m.status === "Active").map(m => m.mid));
+      const wd = await P.evaluate(() => MEMBERS.filter(m => m.status !== "Active").map(m => m.mid));
+      ok("Login: user field is a dropdown listing every Active member as 'Name — MID'", await P.evaluate(() => document.getElementById("login-user").tagName) === "SELECT" && opts.length === active.length + 1 && active.every(m => opts.some(o => o[0] === m && o[1].endsWith("— " + m))), JSON.stringify(opts.slice(0, 3)));
+      ok("Login: non-active (Withdrawn/Cancelled) members are not listed", wd.length > 0 && wd.every(m => !opts.some(o => o[0] === m)), JSON.stringify(wd));
+      await P.selectOption("#login-user", "PGCS-2105"); await P.fill("#login-pass", "wrong"); await P.click("#loginForm button:has-text('Login')");
+      ok("Login: wrong password still rejected", !(await P.locator("#login-err").evaluate(e => e.classList.contains("hidden"))));
+    }
+    await P.selectOption("#login-user", mid); await P.fill("#login-pass", "pgcs1234"); await P.click("#loginForm button:has-text('Login')"); await P.waitForSelector("#app:not(.hidden)");
     return P;
   };
   try {
@@ -37,13 +46,15 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     // ---- Income Year creation (new Admin (IT) form)
     const go = sec => A.evaluate(x => adminNavigate(x, document.querySelector(`[data-admin-target="${x}"]`)), sec);
     await A.click("#nav-admin"); await go("admin-entry-section");
-    ok("Income Year table lists the existing years with Active status", await A.locator("#admin-years tbody tr").count() === 2);
+    ok("Income Years use a year dropdown (not a table of all years): 2 existing years listed", await A.locator("#iy-select option").count() === 2 && await A.locator("#admin-years table").count() === 0);
+    const instRowsNow = await A.locator("#admin-inst tbody tr").count(), nNow = await ev("incomeYears.find(y=>y.id===iySel).installments.length");
+    ok("Installments table shows only the selected year", instRowsNow === nNow, instRowsNow + " vs " + nNow);
     await A.click("button:has-text('+ New Income Year')");
     ok("New-year form is pre-filled (2027-28, 2027-07-01 .. 2028-06-30, 2000, day 25)", await A.inputValue("#iy-name") === "2027-28" && await A.inputValue("#iy-start") === "2027-07-01" && await A.inputValue("#iy-end") === "2028-06-30" && await A.inputValue("#iy-amt") === "2000" && await A.inputValue("#iy-day") === "25");
     await A.click("button:has-text('Create Income Year')"); await A.waitForTimeout(500);
     const gen = await ev("(incomeYears.find(y=>y.name==='2027-28')||{installments:[]}).installments.map(i=>i.name+'@'+i.dueDate)");
     ok("Create 2027-28 (Asia/Dhaka): 12 installments July/27 … June/28, due on the 25th", gen.length === 12 && gen[0] === "July/27@2027-07-25" && gen[7] === "February/28@2028-02-25" && gen[11] === "June/28@2028-06-25", JSON.stringify(gen));
-    ok("2027-28 appears in the Dashboard year selector and in the table", (await ev("[...document.querySelectorAll('#fy-select option')].map(o=>o.value)")).includes("2027-28") && await A.locator("#admin-years tbody tr:has-text('2027-28')").count() === 1);
+    ok("2027-28 appears in the Dashboard year selector and in the table", (await ev("[...document.querySelectorAll('#fy-select option')].map(o=>o.value)")).includes("2027-28") && await A.locator("#iy-select option:has-text('2027-28')").count() === 1);
     await A.click("button:has-text('+ New Income Year')"); await A.fill("#iy-name", "2027-28"); await A.fill("#iy-start", "2029-07-01"); await A.fill("#iy-end", "2030-06-30"); await A.fill("#iy-day", "31");
     await A.click("button:has-text('Create Income Year')");
     ok("Duplicate Income Year name is rejected with a message", (await A.locator("#iy-err").innerText()).includes("আগে থেকেই আছে"));
@@ -60,6 +71,12 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
 
     // ---- second device sees it without refresh
 
+    // ---- discoverability: shortcut on the Payment Entry page
+    await A.click("#nav-entry");
+    ok("Admin (IT) sees the 'Payment Entry Settings' shortcut on the Payment Entry page", await A.locator("#entry-settings-link").isVisible().catch(() => false) || await ev("!document.getElementById('entry-settings-link').classList.contains('hidden')"));
+    await A.evaluate(() => adminNavigate("admin-payments-section", document.querySelector('#admin-subnav [data-admin-target="admin-payments-section"]')));
+    await A.click("#entry-settings-link"); await A.waitForTimeout(250);
+    ok("Shortcut opens Admin -> Payment Entry Settings even if another admin tab was open", await ev("!document.getElementById('page-admin').classList.contains('hidden') && !document.getElementById('admin-entry-section').classList.contains('hidden') && document.getElementById('admin-payments-section').classList.contains('hidden')"));
     // ---- Payment Entry Settings (one merged section): methods / bank / accounts / form switch
     await go("admin-entry-section");
     ok("Merged section: methods, Income Years and Installments are all inside Payment Entry Settings", await A.locator("#admin-entry-section #admin-entry, #admin-entry-section #admin-years, #admin-entry-section #admin-inst").count() === 3 && await A.locator("#admin-subnav button:has-text('Income Years'), #admin-subnav button:has-text('Installments')").count() === 0);
@@ -87,7 +104,7 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
 
     // ---- inactive year is excluded everywhere (Dashboard & Statement use the same engine)
     const act = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
-    await go("admin-entry-section"); await A.locator("#admin-years tbody tr:has-text('2027-28') button:has-text('Deactivate')").click(); await A.waitForTimeout(400);
+    await go("admin-entry-section"); await A.selectOption("#iy-select", { label: "2027-28" }); await A.click("#admin-years button:has-text('Deactivate Year')"); await A.waitForTimeout(400);
     const inact = await ev("receivableRows('2028-12-31').reduce((s,r)=>s+r.due,0)");
     ok("Deactivated Income Year no longer counts in receivable", act - inact === 17 * 2000 * 12 - 0 || act > inact, JSON.stringify({ act, inact }));
     ok("Statement balances with an inactive year", await ev("finCompute('2028-12-31','ALL').diff") === 0);
@@ -107,7 +124,7 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
       editInstallment(y.id,i.id,'name','Renamed Oct');
       const after=receivableRows(${T}).find(r=>r.m.mid===m)?.due||0;return {before,mid,after}})()`);
     ok("Renaming an installment keeps its Approved payments linked (receivable unchanged)", ren.before - ren.mid === 2000 && ren.mid === ren.after, JSON.stringify(ren));
-    await go("admin-entry-section"); await A.selectOption("#admin-inst select", { label: "2025-26" });
+    await go("admin-entry-section"); await A.selectOption("#iy-select", { label: "2025-26" });
     const p0 = await ev("(document.getElementById('fy-select').value='2025-26', paidOf('PGCS-2101','July-25'))");
     const inp = A.locator("#admin-inst tbody tr").filter({ has: A.locator("input[value='July-25']") }).first().locator("input").first();
     await inp.fill("July Renamed"); await inp.blur(); await A.waitForTimeout(400);

@@ -125,7 +125,7 @@ function renderIncomeYearManagement() {
     Object.assign(iyForm, { start: $("iy-start").value, end: $("iy-end").value, amount: $("iy-amt").value, day: $("iy-day").value, active: $("iy-status").value === "Active" });
   }
   iyKeepSel();
-  const f = iyForm;
+  const f = iyForm, y = iySel && iyYear(iySel);
   const form = f ? `<div class="border rounded-xl p-4 bg-slate-50 mb-4"><p class="font-semibold text-sm mb-2">${f.edit ? "Edit Income Year — " + esc(f.name) : "New Income Year / নতুন আয় বছর"}</p>
     <div class="grid md:grid-cols-3 gap-3 text-sm">
       <div><label class="lbl">Income Year Name</label><input id="iy-name" class="inp" placeholder="2027-28" value="${attr(f.name)}" ${f.edit ? "disabled" : ""}></div>
@@ -135,16 +135,20 @@ function renderIncomeYearManagement() {
       <div><label class="lbl">Monthly Due Day (1–31)</label><input id="iy-day" type="number" min="1" max="31" class="inp" value="${attr(f.day)}"></div>
       <div><label class="lbl">Status</label><select id="iy-status" class="inp"><option ${f.active ? "selected" : ""}>Active</option><option ${f.active ? "" : "selected"}>Inactive</option></select></div>
     </div>
-    ${f.edit ? `<p class="text-xs text-slate-500 mt-2">Default Amount / Due Day শুধু নতুন কিস্তি যোগ করার সময় কাজে লাগে; বিদ্যমান কিস্তি Installments সেকশন থেকে বদলান। Year-এর নাম বদলানো যায় না (Payment-এর সাথে সংযোগ ঠিক রাখতে)।</p>` : `<p class="text-xs text-slate-500 mt-2">সংরক্ষণ করলে Start–End সময়ের প্রতিটি মাসের জন্য একটি করে কিস্তি স্বয়ংক্রিয়ভাবে তৈরি হবে (Due Day মাসের শেষ দিনের বেশি হলে মাসের শেষ দিন; Leap Year সহ)।</p>`}
+    ${f.edit ? `<p class="text-xs text-slate-500 mt-2">Default Amount / Due Day শুধু নতুন কিস্তি যোগ করার সময় কাজে লাগে; বিদ্যমান কিস্তি নিচের Installments অংশ থেকে বদলান। Year-এর নাম বদলানো যায় না (Payment-এর সাথে সংযোগ ঠিক রাখতে)।</p>` : `<p class="text-xs text-slate-500 mt-2">সংরক্ষণ করলে Start–End সময়ের প্রতিটি মাসের জন্য একটি করে কিস্তি স্বয়ংক্রিয়ভাবে তৈরি হবে (Due Day মাসের শেষ দিনের বেশি হলে মাসের শেষ দিন; Leap Year সহ)।</p>`}
     <p id="iy-err" class="text-rose-600 text-sm mt-2 hidden"></p>
     <div class="flex gap-2 mt-3"><button class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm" onclick="iySaveForm()">${f.edit ? "Save Changes" : "Create Income Year"}</button><button class="bg-slate-200 px-4 py-2 rounded-lg text-sm" onclick="iyForm=null;renderIncomeYearManagement()">Cancel</button></div></div>` : "";
-  const years = [...incomeYears].sort((a, b) => b.startDate.localeCompare(a.startDate));
-  root.innerHTML = `<div class="flex items-center mb-3"><p class="text-xs text-slate-500">নতুন Income Year তৈরি করলে তা Dashboard, Payment Entry, Financial Statement ও Receivable-এ স্বয়ংক্রিয়ভাবে আসে (সব ডিভাইসে)।</p>
-    <button class="ml-auto bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg whitespace-nowrap" onclick="iyNew()">+ New Income Year</button></div>${form}
-    <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-slate-100"><tr class="[&>th]:p-2"><th>Income Year</th><th>Start</th><th>End</th><th class="text-right">Default Installment</th><th>Due Day</th><th>Installments</th><th>Status</th><th>Actions</th></tr></thead><tbody>${years.map(y => `
-    <tr class="border-t ${y.id === iySel ? "bg-emerald-50" : ""}"><td class="p-2 font-semibold">${esc(y.name)}</td><td>${fmtD(y.startDate)}</td><td>${fmtD(y.endDate)}</td><td class="text-right">${fmt(y.defaultAmount || 0)}</td><td>${y.dueDay || ""}</td><td>${(y.installments || []).length}</td>
-    <td><span class="chip ${yAct(y) ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}">${yAct(y) ? "Active" : "Inactive"}</span></td>
-    <td class="space-x-2"><button class="text-blue-600 underline" onclick="iyOpenInst('${y.id}')">Installments</button><button class="text-blue-600 underline" onclick="iyEdit('${y.id}')">Edit</button><button class="${yAct(y) ? "text-amber-700" : "text-emerald-700"} underline" onclick="iyToggleYear('${y.id}')">${yAct(y) ? "Deactivate" : "Activate"}</button></td></tr>`).join("")}</tbody></table></div>`;
+  const opts = [...incomeYears].sort((a, b) => b.startDate.localeCompare(a.startDate)).map(x => `<option value="${attr(x.id)}" ${y && x.id === y.id ? "selected" : ""}>${esc(x.name)}${yAct(x) ? "" : " (Inactive)"}</option>`).join("");
+  const card = y ? `<div class="border rounded-xl p-4 mb-3 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm bg-white">
+      <div><p class="text-xs text-slate-500">Start</p><p class="font-semibold">${fmtD(y.startDate)}</p></div><div><p class="text-xs text-slate-500">End</p><p class="font-semibold">${fmtD(y.endDate)}</p></div>
+      <div><p class="text-xs text-slate-500">Default Installment</p><p class="font-semibold">${fmt(y.defaultAmount || 0)}</p></div><div><p class="text-xs text-slate-500">Due Day</p><p class="font-semibold">${y.dueDay || ""}</p></div>
+      <div><p class="text-xs text-slate-500">Installments</p><p class="font-semibold">${(y.installments || []).length}</p></div>
+      <div><p class="text-xs text-slate-500">Status</p><span class="chip ${yAct(y) ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}">${yAct(y) ? "Active" : "Inactive"}</span></div>
+      <div class="col-span-2 md:col-span-6 space-x-3"><button class="text-blue-600 underline" onclick="iyEdit('${attr(y.id)}')">Edit Year</button><button class="${yAct(y) ? "text-amber-700" : "text-emerald-700"} underline" onclick="iyToggleYear('${attr(y.id)}')">${yAct(y) ? "Deactivate Year" : "Activate Year"}</button></div></div>` : "";
+  root.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-3"><label class="text-sm font-medium">Income Year:</label>
+    <select id="iy-select" class="border rounded-lg px-2 py-1.5 text-sm bg-white" onchange="iySel=this.value;iyForm=null;renderIncomeYearManagement()">${opts}</select>
+    <button class="ml-auto bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-lg whitespace-nowrap" onclick="iyNew()">+ New Income Year</button></div>
+    <p class="text-xs text-slate-500 mb-3">বছর বেছে নিন — নিচের Year Details ও Installments শুধু সেই বছরের। নতুন Income Year তৈরি করলে তা Dashboard, Payment Entry, Financial Statement ও Receivable-এ স্বয়ংক্রিয়ভাবে আসে (সব ডিভাইসে)।</p>${form}${card}`;
   renderInstallmentManagement();
 }
 function iyNew() {
@@ -156,7 +160,7 @@ function iyEdit(id) {
   const y = iyYear(id); if (!y) return toast("Income Year পাওয়া যায়নি");
   iyForm = { edit: true, id, name: y.name, start: y.startDate, end: y.endDate, amount: y.defaultAmount || 2000, day: y.dueDay || 25, active: yAct(y) }; renderIncomeYearManagement();
 }
-function iyOpenInst(id) {
+function iyOpenInst(id) {   // kept for compatibility
   iySel = id; renderIncomeYearManagement();
   $("admin-inst").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -195,8 +199,7 @@ function renderInstallmentManagement() {
   iyKeepSel();
   const y = iySel && iyYear(iySel);
   if (!y) { root.innerHTML = '<p class="text-sm text-slate-500">কোনো Income Year নেই।</p>'; return; }
-  const opts = [...incomeYears].sort((a, b) => b.startDate.localeCompare(a.startDate)).map(x => `<option value="${x.id}" ${x.id === y.id ? "selected" : ""}>${esc(x.name)}${yAct(x) ? "" : " (Inactive)"}</option>`).join("");
-  root.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-2"><select class="border rounded-lg px-2 py-1.5 text-sm bg-white" onchange="iySel=this.value;renderInstallmentManagement();renderIncomeYearManagement()">${opts}</select><p class="text-sm font-semibold">${esc(y.name)} — Installment Management</p>
+  root.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-2"><p class="text-sm font-semibold">${esc(y.name)} — Installments</p>
     <button class="ml-auto bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg" onclick="iyAddInst()">+ Add Installment</button></div>
     <div class="overflow-x-auto border rounded-lg"><table class="w-full text-xs text-left"><thead class="bg-slate-100"><tr class="[&>th]:p-2"><th>SL</th><th>Installment Name</th><th>Due Date</th><th>Amount (BDT)</th><th>Payments</th><th class="text-center">Active</th><th></th></tr></thead><tbody>${(y.installments || []).map((i, k) => {
       const ps = instPayments(y, i), ap = ps.filter(paymentCounts), id = attr(i.id);
@@ -265,6 +268,7 @@ function iyViewPayments(yid, iid) {
 const methodUse = m => payments.filter(p => p.method === m).length;
 function renderEntrySettings() {
   const root = $("admin-entry"); if (!root || !isAdmin()) return;
+  $("entry-settings-link")?.classList.remove("hidden");
   const keep = { m: $("es-new-method")?.value || "", a: $("es-new-account")?.value || "" };      // typed text survives background refreshes
   root.innerHTML = `
     <label class="text-sm font-medium"><input type="checkbox" ${S.formOpen ? "checked" : ""} onchange="setS('formOpen',this.checked)"> Enable Entry Form for Members <span class="text-xs text-slate-500">(বন্ধ থাকলে শুধু Admin Entry দিতে পারে)</span></label>
@@ -330,4 +334,10 @@ function esRemoveAccount(i) {
   if (!isAdmin()) return toast(NO_PERM);
   if (!confirm(`"${S.accounts[i]}" Account মুছে ফেলবেন? (পুরনো Payment অপরিবর্তিত থাকবে)`)) return;
   esSave({ accounts: S.accounts.filter((_, k) => k !== i) }, "Account No মুছে ফেলা হয়েছে");
+}
+
+// shortcut on the Payment Entry page (Admin (IT) only): jump straight to Payment Entry Settings
+function openEntrySettings() {
+  if (!isAdmin()) return toast(NO_PERM);
+  showPage("admin"); adminNavigate("admin-entry-section", document.querySelector('#admin-subnav [data-admin-target="admin-entry-section"]'));
 }

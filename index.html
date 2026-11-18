@@ -25,7 +25,7 @@
   <form id="loginForm" class="bg-white p-8 rounded-2xl shadow w-full max-w-sm space-y-4">
     <img src="Pictures/PGCS-21_Logo.png" class="h-24 mx-auto" alt="PGCS-21" />
     <h1 class="text-center font-bold text-slate-800">Pashchimanchal Gas Co-operative Society (PGCS)-21</h1>
-    <input id="login-user" required autocomplete="username" class="w-full border rounded-lg p-2.5" placeholder="Username (যেমন PGCS-2105)" />
+    <select id="login-user" required autocomplete="username" class="w-full border rounded-lg p-2.5 bg-white"><option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option></select>
     <input id="login-pass" type="password" autocomplete="current-password" required class="w-full border rounded-lg p-2.5" placeholder="Password" />
     <p id="login-err" class="text-rose-600 text-sm hidden"></p>
     <p id="db-status" class="text-center text-sm text-slate-500"></p>
@@ -91,7 +91,8 @@
 
     <!-- Entry -->
     <section id="page-entry" class="page-section hidden">
-      <h2 class="text-2xl font-bold mb-2">Payment Entry</h2>
+      <div class="flex flex-wrap items-center gap-3 mb-2"><h2 class="text-2xl font-bold">Payment Entry</h2>
+        <button type="button" id="entry-settings-link" class="hidden bg-slate-800 text-white text-sm px-3 py-1.5 rounded-lg" onclick="openEntrySettings()">⚙ Payment Entry Settings</button></div>
       <p class="text-sm text-slate-500 mb-4" id="entry-note"></p>
       <p id="form-closed" class="hidden bg-amber-50 border border-amber-300 text-amber-800 p-4 rounded-lg max-w-2xl mb-3">Admin বর্তমানে Data Entry Form বন্ধ রেখেছেন।</p>
       <form id="paymentForm" class="bg-white p-6 rounded-xl border max-w-2xl grid md:grid-cols-2 gap-4">
