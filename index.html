@@ -25,23 +25,26 @@
 <!-- LOGIN -->
 <div id="login-screen" class="login-wrap">
   <section class="login-hero">
+    <div class="orb orb-1" aria-hidden="true"></div>
+    <div class="orb orb-2" aria-hidden="true"></div>
+    <div class="orb orb-3" aria-hidden="true"></div>
     <div class="hero-brand"><img src="Pictures/PGCS-21_Logo.png" alt="PGCS-21" /><div><b>PGCS-21</b><span>Pashchimanchal Gas Co-operative Society</span></div></div>
     <div class="hero-copy">
       <h2>Financial Management Portal</h2>
-      <p>A Halal Way of Investment — সদস্যদের কিস্তি, হিসাব ও আর্থিক বিবরণী এক জায়গায়, স্বচ্ছভাবে।</p>
+      <p>A Halal Way of Investment — members' installments, accounts and financial statements in one place, transparently.</p>
     </div>
     <ul class="hero-points">
-      <li><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg></i>সব ডিভাইসে রিয়েল-টাইম সিঙ্ক</li>
-      <li><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></i>স্বচ্ছ Payment, Approval ও Audit ইতিহাস</li>
-      <li><i><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg></i>স্বয়ংক্রিয় Financial Statement ও Receivable</li>
+      <li><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg></i>Real-time sync on all devices</li>
+      <li><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></i>Transparent Payment, Approval and Audit history</li>
+      <li><i><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg></i>Automatic Financial Statement and Receivable</li>
     </ul>
   </section>
   <section class="login-panel">
     <form id="loginForm" class="login-card">
-      <h1>স্বাগতম</h1>
-      <p class="lead">আপনার নাম বেছে নিন এবং Password দিয়ে প্রবেশ করুন।</p>
-      <div class="field"><label class="fld" for="login-user">সদস্য</label>
-        <select id="login-user" required autocomplete="username" class="bg-white"><option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option></select></div>
+      <h1>Welcome</h1>
+      <p class="lead">Choose your name and sign in with your Password.</p>
+      <div class="field"><label class="fld" for="login-user">Member</label>
+        <select id="login-user" required autocomplete="username" class="bg-white"><option value="">— Select a member (Name — MID) —</option></select></div>
       <div class="field"><label class="fld" for="login-pass">Password</label>
         <input id="login-pass" type="password" autocomplete="current-password" required placeholder="Password" /></div>
       <p id="login-err" class="text-rose-600 text-sm hidden mb-3"></p>
@@ -59,6 +62,7 @@
     <div class="sb-brand">
       <img src="Pictures/PGCS-21_Logo.png" class="sb-logo" alt="" />
       <div><div class="sb-title">PGCS-21</div><div class="sb-sub">Financial Portal</div></div>
+      <button type="button" class="menu-close" onclick="closeMenu()" aria-label="Close navigation">&times;</button>
     </div>
     <div class="sb-label">Menu</div>
     <nav class="sb-nav">
@@ -66,31 +70,35 @@
       <button onclick="showPage('entry')" id="nav-entry" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg><span>Payment Entry</span></button>
       <button onclick="showPage('member-detail')" id="nav-member-detail" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Members' Detail</span></button>
       <button onclick="showPage('approvals')" id="nav-approvals" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><span id="nav-approvals-label">Approvals</span></button>
-      <button onclick="showPage('admin')" id="nav-admin" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg><span>Admin (IT)</span></button>
       <button onclick="showPage('financial')" id="nav-financial" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg><span>Financial Statement</span></button>
       <button onclick="showPage('reports')" id="nav-reports" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Reports</span></button>
+      <button onclick="showPage('admin')" id="nav-admin" class="nav-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg><span>Settings</span></button>
     </nav>
     <div class="sb-foot">
       <div class="sb-user"><span class="dot"></span><p id="who"></p></div>
       <div class="sb-bank"><b>BASIC Bank PLC</b><br>A/C: 2914-010019169</div>
       <div class="sb-actions">
-        <button onclick="changePassword()" class="sb-link">Password পরিবর্তন</button>
+        <button onclick="changePassword()" class="sb-link">Change Password</button>
         <button id="reset-btn" onclick="resetData()" class="sb-link danger">Reset to Original Excel</button>
       </div>
       <button onclick="logout()" class="sb-logout">Logout</button>
     </div>
   </aside>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="closeMenu()" aria-hidden="true"></div>
 
   <main class="app-main">
     <div class="topbar">
+      <button type="button" id="menu-toggle" class="menu-toggle" onclick="toggleMenu()" aria-label="Open navigation" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+      </button>
       <div class="hello"><span>Pashchimanchal Gas Co-operative Society</span><b>Financial Management Portal</b></div>
-      <div class="fy-pill"><label for="fy-select">আর্থিক বছর</label>
+      <div class="fy-pill"><label for="fy-select">Financial Year</label>
         <select id="fy-select" onchange="refreshAll()"></select></div>
     </div>
 
     <!-- Dashboard -->
     <section id="page-dashboard" class="page-section">
-      <div class="page-head"><h2>Dashboard</h2><p>সদস্যদের জমা, বকেয়া ও মাসভিত্তিক অগ্রগতির সারসংক্ষেপ</p></div>
+      <div class="page-head"><h2>Dashboard</h2><p>Summary of members' paid, due and monthly progress</p></div>
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5" id="stats"></div>
       <div class="bg-white rounded-xl border p-4 mb-5">
         <h4 class="font-semibold mb-2 text-sm">Monthly Payments (Approved)</h4>
@@ -104,7 +112,7 @@
           <option value="ALL">All Members</option><option value="DUE">Only Due</option>
           <option value="DRAFT">Only Draft</option><option value="CANCELLED">Cancelled Members</option><option value="FULL">Payment Full (No Due)</option></select>
       </div>
-      <p class="text-xs text-slate-500 mb-2">Installments due after the 25th of each month <span class="chip bg-rose-100 text-rose-700">Due</span> দেখাবে। Draft = Admin approve করেনি।</p>
+      <p class="text-xs text-slate-500 mb-2">Installments due after the 25th of each month <span class="chip bg-rose-100 text-rose-700">Due</span> will be shown. Draft = Admin has not approved.</p>
       <div class="bg-white rounded-xl border overflow-x-auto">
         <table class="w-full text-xs text-left" id="matrix"></table>
       </div>
@@ -115,10 +123,10 @@
       <div class="flex flex-wrap items-center gap-3 mb-2"><h2 class="text-2xl font-bold">Payment Entry</h2>
         <button type="button" id="entry-settings-link" class="hidden bg-slate-800 text-white text-sm px-3 py-1.5 rounded-lg" onclick="openEntrySettings()">⚙ Payment Entry Settings</button></div>
       <p class="text-sm text-slate-500 mb-4" id="entry-note"></p>
-      <p id="form-closed" class="hidden bg-amber-50 border border-amber-300 text-amber-800 p-4 rounded-lg max-w-2xl mb-3">Admin বর্তমানে Data Entry Form বন্ধ রেখেছেন।</p>
+      <p id="form-closed" class="hidden bg-amber-50 border border-amber-300 text-amber-800 p-4 rounded-lg max-w-2xl mb-3">Admin has currently closed the Data Entry Form.</p>
       <form id="paymentForm" class="bg-white p-6 rounded-xl border max-w-2xl grid md:grid-cols-2 gap-4">
-        <div><label class="lbl">সদস্য</label><select id="entry-member" class="inp"></select></div>
-        <div class="md:col-span-2"><label class="lbl">কিস্তি / Installment (একাধিক select করতে পারবেন)</label>
+        <div><label class="lbl">Member</label><select id="entry-member" class="inp"></select></div>
+        <div class="md:col-span-2"><label class="lbl">Installment (you can select multiple)</label>
           <div id="installment-checkboxes" class="border rounded-lg p-3 bg-slate-50 max-h-48 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
         </div>
         <div><label class="lbl">Payment Method</label>
@@ -128,7 +136,7 @@
         <div><label class="lbl">Bank Name</label><input id="entry-bank" value="BASIC Bank PLC" class="inp" /></div>
         <div class="md:col-span-2"><label class="lbl">Account No</label><select id="entry-account" class="inp"></select></div>
         <div class="md:col-span-2"><label class="lbl">Comment</label><input id="entry-comment" class="inp" /></div>
-        <button class="md:col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg">Submit (Draft হিসেবে জমা হবে)</button>
+        <button class="md:col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg">Submit (will be saved as Draft)</button>
       </form>
     </section>
 
@@ -186,10 +194,10 @@
       <div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-sm text-left" id="approvals-table"></table></div>
     </section>
 
-    <!-- Admin (IT) -->
+    <!-- Settings -->
     <section id="page-admin" class="page-section hidden">
-      <h2 class="text-2xl font-bold mb-4">Admin (IT) Control Panel</h2>
-      <nav id="admin-subnav" class="bg-white rounded-xl border p-2 mb-5 flex gap-2 overflow-x-auto sticky top-2 z-20" aria-label="Admin (IT) sections">
+      <h2 class="text-2xl font-bold mb-4">Settings</h2>
+      <nav id="admin-subnav" class="bg-white rounded-xl border p-2 mb-5 flex gap-2 overflow-x-auto sticky top-2 z-20" aria-label="Settings sections">
         <button type="button" class="admin-subnav-btn active" data-admin-target="admin-entry-section" onclick="adminNavigate('admin-entry-section', this)">Payment Entry Settings</button>
         <button type="button" class="admin-subnav-btn" data-admin-target="admin-payments-section" onclick="adminNavigate('admin-payments-section', this)">Payment Management</button>
         <button type="button" class="admin-subnav-btn" data-admin-target="admin-members-section" onclick="adminNavigate('admin-members-section', this)">Members & Login</button>
@@ -198,15 +206,15 @@
       </nav>
       <div id="admin-entry-section" class="admin-section bg-white rounded-xl border p-5 mb-5">
         <h3 class="font-bold mb-1">Payment Entry Settings</h3>
-        <p class="text-xs text-slate-500 mb-4">Payment Entry Form-এর সবকিছু এখান থেকে নিয়ন্ত্রণ করুন: Payment Method, Bank, Account No, Income Year ও কিস্তি — যোগ, সম্পাদনা ও মুছুন।</p>
+        <p class="text-xs text-slate-500 mb-4">Control everything about the Payment Entry Form from here: Payment Method, Bank, Account No, Income Year and Installment — add, edit and delete.</p>
         <div id="admin-entry"></div>
-        <div class="border-t mt-6 pt-5"><h4 class="font-semibold mb-1">Income Years <span class="text-xs font-normal text-slate-500">/ আয় বছর</span></h4><div id="admin-years"></div></div>
-        <div class="border-t mt-6 pt-5"><h4 class="font-semibold mb-1">Installments <span class="text-xs font-normal text-slate-500">/ কিস্তি</span></h4><div id="admin-inst"></div></div>
+        <div class="border-t mt-6 pt-5"><h4 class="font-semibold mb-1">Income Years <span class="text-xs font-normal text-slate-500">/ Income Year</span></h4><div id="admin-years"></div></div>
+        <div class="border-t mt-6 pt-5"><h4 class="font-semibold mb-1">Installments <span class="text-xs font-normal text-slate-500">/ Installment</span></h4><div id="admin-inst"></div></div>
       </div>
       <div id="admin-payments-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Payment Management</h3><div id="admin-payments"></div></div>
       <div id="admin-members-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-3">Members & Login (Username = MID)</h3><div id="admin-add"></div>
         <div class="overflow-x-auto mt-4"><table class="w-full text-xs text-left" id="admin-users"></table></div></div>
-      <div id="admin-finance-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-1">Financial Statement Configuration</h3><p class="text-xs text-slate-500 mb-3">Income / Expense / Asset / Liability / Equity item যোগ, নাম বদল, Active-Inactive ও ক্রম নিয়ন্ত্রণ (শুধু Admin (IT))।</p><div id="admin-fincfg"></div></div>
+      <div id="admin-finance-section" class="admin-section bg-white rounded-xl border p-5 mb-5"><h3 class="font-bold mb-1">Financial Statement Configuration</h3><p class="text-xs text-slate-500 mb-3">Add, rename, and manage the Active-Inactive status and order of Income / Expense / Asset / Liability / Equity items (Admin (IT) only).</p><div id="admin-fincfg"></div></div>
       <div id="admin-backup-section" class="admin-section bg-white rounded-xl border p-5"><h3 class="font-bold mb-3">Database Backup & Restore</h3><div id="admin-backup"></div></div>
     </section>
 
@@ -218,12 +226,12 @@
       <h2 class="text-2xl font-bold mb-4">Reports</h2>
       <div class="grid md:grid-cols-2 gap-5">
         <div class="bg-white p-6 rounded-xl border">
-          <h3 class="font-bold mb-2">বার্ষিক Summary</h3>
+          <h3 class="font-bold mb-2">Annual Summary</h3>
           <div class="flex gap-3"><button onclick="exportSummaryPDF()" class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm">PDF</button>
           <button onclick="exportFullExcel()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm">Excel</button></div>
         </div>
         <div class="bg-white p-6 rounded-xl border">
-          <h3 class="font-bold mb-2">কিস্তি অনুযায়ী Report</h3>
+          <h3 class="font-bold mb-2">Report by Installment</h3>
           <div class="flex gap-3"><select id="report-month-select" class="border rounded-lg px-3 py-2 text-sm flex-1"></select>
           <button onclick="exportMonthlyPDF()" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">PDF</button></div>
         </div>
@@ -248,11 +256,11 @@
 <!-- Approved payment deletion (Void) + generic info dialog (Admin IT) -->
 <div id="void-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
   <div class="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-    <h3 class="text-lg font-bold text-rose-700 mb-1">Approved Payment মুছে ফেলুন</h3>
-    <p class="text-xs text-slate-500 mb-3">Payment মুছে ফেলা হবে না — <b>Voided</b> হিসেবে সংরক্ষিত থাকবে; সদস্যের Paid, Receivable, Dashboard, Financial Statement, PDF ও Excel থেকে বাদ যাবে।</p>
+    <h3 class="text-lg font-bold text-rose-700 mb-1">Delete Approved Payment</h3>
+    <p class="text-xs text-slate-500 mb-3">The Payment will not be deleted — it will be kept as <b>Voided</b>; it will be removed from the member's Paid, Receivable, Dashboard, Financial Statement, PDF and Excel.</p>
     <div id="void-details" class="text-sm"></div>
-    <label class="lbl mt-3">মুছে ফেলার কারণ / Reason *</label>
-    <textarea id="void-reason" rows="3" class="inp" placeholder="যেমন: ভুল সদস্য/ভুল কিস্তিতে Entry হয়েছিল"></textarea>
+    <label class="lbl mt-3">Reason for deletion / Reason *</label>
+    <textarea id="void-reason" rows="3" class="inp" placeholder="e.g., an entry was made for the wrong member/wrong installment"></textarea>
     <p id="void-err" class="text-rose-600 text-sm mt-1 hidden"></p>
     <div class="flex justify-end gap-2 mt-4"><button class="bg-slate-200 px-4 py-2 rounded-lg text-sm" onclick="closeVoid()">Cancel</button><button class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold" onclick="confirmVoid()">Confirm Delete (Void)</button></div>
   </div>
@@ -269,18 +277,18 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script src="db.js"></script>
 <script>
-  // Database থেকে ডেটা নামানোর পর assets.js ও app.js চালু হবে
+  // After data is loaded from the Database, assets.js and app.js will run
   document.getElementById("loginForm").addEventListener("submit", e => { if (!window.__appReady) e.preventDefault(); });
   (async () => {
     const st = document.getElementById("db-status");
     try {
-      st.textContent = "অনলাইন Database থেকে ডেটা লোড হচ্ছে...";
+      st.textContent = "Loading data from the online Database...";
       await DB.init();
       for (const src of ["assets.js", "app.js", "finance.js", "admin-ext.js"]) {
         await new Promise((ok, no) => {
           const s = document.createElement("script");
           s.src = src; s.async = false; s.onload = ok;
-          s.onerror = () => no(new Error(src + " লোড হয়নি"));
+          s.onerror = () => no(new Error(src + " failed to load"));
           document.body.appendChild(s);
         });
       }
@@ -290,9 +298,9 @@
     } catch (err) {
       console.error(err);
       st.className = "text-center text-sm text-rose-600";
-      st.textContent = "Database-এর সাথে যুক্ত হওয়া যায়নি: " + (err.message || err) + " ";
+      st.textContent = "Could not connect to the Database: " + (err.message || err) + " ";
       const b = document.createElement("button");
-      b.type = "button"; b.className = "underline"; b.textContent = "আবার চেষ্টা করুন";
+      b.type = "button"; b.className = "underline"; b.textContent = "Try again";
       b.onclick = () => location.reload();
       st.appendChild(b);
     }

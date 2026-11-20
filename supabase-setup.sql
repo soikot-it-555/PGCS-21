@@ -1,27 +1,27 @@
 -- =====================================================================
 -- PGCS-21 — Supabase Database Setup Script
--- এই SQL গুলো Supabase SQL Editor-এ Run করুন
+-- Run these SQL statements in the Supabase SQL Editor
 -- =====================================================================
 
--- 1️⃣ app_state table (সদস্য, সেটিংস, পাসওয়ার্ড ইত্যাদি key → JSON value হিসেবে সেভ)
+-- 1️⃣ app_state table (members, settings, passwords etc. saved as key → JSON value)
 create table if not exists app_state (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
 
--- 2️⃣ payments table (প্রতিটি Payment আলাদা row, এককভাবে অনুসন্ধান ও সংশোধনের জন্য)
+-- 2️⃣ payments table (each Payment is a separate row, for individual search and editing)
 create table if not exists payments (
   id bigint primary key,
   data jsonb not null,
   updated_at timestamptz not null default now()
 );
 
--- 3️⃣ RLS (Row Level Security) enable করুন — সবাই read/write করতে পারবে (anon key দিয়ে)
+-- 3️⃣ Enable RLS (Row Level Security) — everyone can read/write (with the anon key)
 alter table app_state enable row level security;
 alter table payments enable row level security;
 
--- 4️⃣ Policy: সবাই সব কিছু করতে পারবে (এই app-এর জন্য password ভিত্তিক access control আছে)
+-- 4️⃣ Policy: everyone can do everything (this app has password-based access control)
 drop policy if exists "Allow all operations for anon users" on app_state;
 drop policy if exists "Allow all operations for anon users" on payments;
 
@@ -35,13 +35,13 @@ create policy "Allow all operations for anon users on payments"
   using (true)
   with check (true);
 
--- 5️⃣ Index তৈরি করুন (দ্রুত query-র জন্য)
+-- 5️⃣ Create indexes (for faster queries)
 create index if not exists app_state_key_idx on app_state(key);
 create index if not exists payments_id_idx on payments(id);
 create index if not exists payments_updated_at_idx on payments(updated_at);
 
 -- =====================================================================
--- 6️⃣ Financial Statement module (নতুন) — আগের কোনো table/data বদলায় না
+-- 6️⃣ Financial Statement module (new) — does not change any existing table/data
 -- =====================================================================
 create table if not exists fin_transactions (
   id text primary key,
@@ -54,7 +54,7 @@ create policy "Allow all operations for anon users on fin_transactions"
   on fin_transactions for all using (true) with check (true);
 create index if not exists fin_transactions_updated_at_idx on fin_transactions(updated_at);
 
--- 7️⃣ Supporting documents-এর জন্য Private Storage Bucket (সর্বোচ্চ 10 MB, নির্দিষ্ট file type)
+-- 7️⃣ Private Storage Bucket for supporting documents (max 10 MB, specific file types)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('fin-docs', 'fin-docs', false, 10485760, array[
   'application/pdf','image/jpeg','image/png','application/msword',
@@ -71,4 +71,4 @@ create policy "fin-docs select" on storage.objects for select using (bucket_id =
 create policy "fin-docs insert" on storage.objects for insert with check (bucket_id = 'fin-docs');
 create policy "fin-docs delete" on storage.objects for delete using (bucket_id = 'fin-docs');
 
--- ✅ সম্পন্ন! এখন আপনার PGCS-21 app database-এর সাথে connect হতে পারবে।
+-- ✅ Done! Your PGCS-21 app can now connect to the database.

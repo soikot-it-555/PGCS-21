@@ -158,11 +158,14 @@ const ok = (name, cond, extra = "") => { results.push([cond ? "PASS" : "FAIL", n
     ok("Device B receives the voided payment automatically", true);
     ok("Admin cannot be bypassed: member session cannot void", await B.evaluate(() => { const p = payments.find(x => x.status === "Approved"); voidPayment(p.id); return payments.find(x => x.id === p.id).status === "Approved"; }));
 
-    // ---- responsive design: on a phone only the menu pills stay pinned while scrolling; nothing overflows sideways
+    // ---- responsive design: mobile navigation is a left drawer opened by the hamburger button; nothing overflows sideways
     const M = await device("M-mobile", "PGCS-2114", { width: 390, height: 844 });
     await M.evaluate(() => { document.body.style.minHeight = "3000px"; window.scrollTo(0, 700); });
     await M.waitForTimeout(150);
-    ok("Mobile: menu pills stay pinned to the top while scrolling", Math.abs((await M.locator(".sb-nav").boundingBox()).y) < 2);
+    ok("Mobile: hamburger menu button is visible", await M.evaluate(() => { const b = document.getElementById("menu-toggle"); return !!b && b.getBoundingClientRect().width > 0 && b.getBoundingClientRect().height > 0; }));
+    ok("Mobile: navigation is hidden (drawer closed) before tap", await M.evaluate(() => !document.querySelector(".sidebar").classList.contains("open")));
+    await M.click("#menu-toggle"); await M.waitForTimeout(400);
+    ok("Mobile: tapping the hamburger opens the left navigation drawer", await M.evaluate(() => document.querySelector(".sidebar").classList.contains("open")));
     ok("Mobile: page does not scroll sideways", await M.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     ok("Desktop sidebar is fixed 272px wide with the content shifted right", await A.evaluate(() => { const s = document.querySelector(".sidebar").getBoundingClientRect(), m = document.querySelector(".app-main").getBoundingClientRect(); return Math.round(s.width) === 272 && Math.round(m.left) === 272; }));
   } catch (e) { console.log("E2E ABORTED:", e.message); ok("E2E completed", false, e.message); }

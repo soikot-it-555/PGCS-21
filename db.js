@@ -95,7 +95,7 @@
       } catch (e) {
         clearTimeout(timer);
         if (a < retries) { await sleep(500 * 2 ** a); continue; }
-        const err = new Error("Network error: ইন্টারনেট সংযোগ চেক করুন");
+        const err = new Error("Network error: check your internet connection");
         err.network = true; throw err;
       }
       clearTimeout(timer);
@@ -323,7 +323,7 @@
       for (const id of [...c.view.keys()]) if (!out.has(id) && !touched.has(id) && !c.pending(id)) c.view.delete(id);
       return conflicts;
     }
-    throw new Error("অনেকে একসাথে সেভ করছে — আবার চেষ্টা করুন (too many concurrent saves)");
+    throw new Error("Too many people are saving at once — try again (too many concurrent saves)");
   }
 
   // ------------------------------------------------------------------- pump
@@ -333,7 +333,7 @@
   }
   function describe(cf) {
     const lab = c => DEFS[c.name].label + " " + (String(c.id).length > 24 ? String(c.id).slice(0, 8) + "…" : c.id);
-    return cf.map(c => lab(c) + (c.serverHas ? " — অন্য কেউ আগে পরিবর্তন করেছে" : " — অন্য কেউ আগেই মুছে ফেলেছে")).join("; ");
+    return cf.map(c => lab(c) + (c.serverHas ? " — someone else changed it first" : " — someone else already deleted it")).join("; ");
   }
   function kick(now) {
     if (now) { clearTimeout(retryTimer); retryTimer = null; }
@@ -371,7 +371,7 @@
           batch.forEach(o => { o.inflight = false; if (o.after) { if (o.after.t === "set") { o.t = "set"; o.j = o.after.j; } else o.t = "del"; delete o.after; } });
           console.error("Database save failed:", e);
           markFail(e);
-          errBanner("⚠️ সেভ হয়নি — পরিবর্তন এখনও Database-এ পৌঁছায়নি (" + (e.network ? "offline" : e.message) + "). পরিবর্তন এই ডিভাইসে রাখা আছে, স্বয়ংক্রিয়ভাবে আবার চেষ্টা হবে।");
+          errBanner("⚠️ Not saved — the change has not reached the Database yet (" + (e.network ? "offline" : e.message) + "). The change is kept on this device and will be retried automatically.");
           retryTimer = setTimeout(() => { retryTimer = null; kick(); }, Math.min(30000, 2000 * 2 ** Math.min(failCount, 4)));
           break;
         }
@@ -381,10 +381,10 @@
       const done = !queue.size;
       if (done || retryTimer) { const w = waiters; waiters = []; w.forEach(r => r(done)); }
       if (all.length) {
-        warnBanner("⚠️ Conflict: আপনার পরিবর্তন প্রয়োগ হয়নি, Database-এর সর্বশেষ সংস্করণ লোড হয়েছে → " + describe(all));
+        warnBanner("⚠️ Conflict: your change was not applied, the latest version from the Database has been loaded → " + describe(all));
         window.dispatchEvent(new CustomEvent("db-conflict", { detail: all }));
       }
-      if (rejected.length) warnBanner("⚠️ Database পরিবর্তনটি গ্রহণ করেনি (সংরক্ষণ হয়নি): " + rejected.join("; "));
+      if (rejected.length) warnBanner("⚠️ The Database rejected the change (not saved): " + rejected.join("; "));
       if (queue.size && !retryTimer && !paused) setTimeout(kick, 0);
     }
   }
@@ -474,7 +474,7 @@
   async function storage(path, opts = {}) {
     let res;
     try { res = await fetch(SUPABASE_URL + "/storage/v1/" + path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } }); }
-    catch (e) { throw new Error("Network error: ইন্টারনেট সংযোগ চেক করুন"); }
+    catch (e) { throw new Error("Network error: check your internet connection"); }
     if (!res.ok) throw new Error("Storage " + res.status + ": " + (await res.text()).slice(0, 160));
     return res.json().catch(() => ({}));
   }
@@ -487,22 +487,22 @@
 
   // ---------------------------------------------------------------------- startup
   async function init() {
-    if (!configured) throw new Error("db.js ফাইলে Supabase URL ও Key বসানো হয়নি");
-    if (!navigator.onLine) throw new Error("ইন্টারনেট নেই — Database থেকে সর্বশেষ ডেটা আনা যায়নি, তাই অ্যাপ চালু করা হয়নি (পুরনো cache দিয়ে financial entry নিরাপদ নয়)");
+    if (!configured) throw new Error("Supabase URL and Key are not set in the db.js file");
+    if (!navigator.onLine) throw new Error("No internet — the latest data could not be fetched from the Database, so the app was not started (financial entry with old cache is not safe)");
     // 1. connection / schema probe
     let probe;
     try { probe = await fetch(SUPABASE_URL + "/rest/v1/app_state?select=key,version&limit=1", { headers: authHeaders(), cache: "no-store" }); }
-    catch (e) { throw new Error("Supabase URL-এ সংযোগ হচ্ছে না। ইন্টারনেট চেক করুন।"); }
+    catch (e) { throw new Error("Cannot connect to the Supabase URL. Check your internet."); }
     if (!probe.ok) {
       const t = (await probe.text()).slice(0, 200);
-      if (/42703/.test(t) || /column.*version/i.test(t)) throw new Error("Database migration বাকি — supabase-migration-v2.sql একবার SQL Editor-এ Run করুন। (" + t + ")");
-      if (probe.status === 404 || /PGRST205|does not exist|schema cache/i.test(t)) throw new Error("Table পাওয়া যায়নি — supabase-setup.sql ও supabase-migration-v2.sql Run করুন। (" + t + ")");
-      if (probe.status === 401 || probe.status === 403) throw new Error("Key গ্রহণ হয়নি বা RLS policy নেই (" + probe.status + "): " + t);
+      if (/42703/.test(t) || /column.*version/i.test(t)) throw new Error("Database migration pending — run supabase-migration-v2.sql once in the SQL Editor. (" + t + ")");
+      if (probe.status === 404 || /PGRST205|does not exist|schema cache/i.test(t)) throw new Error("Table not found — run supabase-setup.sql and supabase-migration-v2.sql. (" + t + ")");
+      if (probe.status === 401 || probe.status === 403) throw new Error("Key not accepted or no RLS policy (" + probe.status + "): " + t);
       throw new Error("Supabase " + probe.status + ": " + t);
     }
     // 2. authoritative fetch + validation
     const [docs, pay, fin] = await Promise.all([fetchDocs(), fetchRows(DEFS.payments), fetchRows(DEFS.finTx)]);
-    if (!Array.isArray(docs) || !Array.isArray(pay) || !Array.isArray(fin)) throw new Error("Database থেকে অপ্রত্যাশিত উত্তর এসেছে");
+    if (!Array.isArray(docs) || !Array.isArray(pay) || !Array.isArray(fin)) throw new Error("Unexpected response received from the Database");
     const dm = new Map(docs.map(r => [r.key, r]));
     const firstTime = !dm.has("_initialized") && !pay.length && !dm.has(MEMBERS_KEY) && !fin.length;
 
@@ -522,7 +522,7 @@
       ready = true;
       for (const [n, v] of Object.entries(seed)) if (v) colls[n].onLocal(JSON.stringify(v));
       persistQueue(); kick(true);
-      if (!(await flush())) { ready = false; throw new Error("প্রথমবার Database সেটআপ সম্পূর্ণ হয়নি — আবার চেষ্টা করুন"); }
+      if (!(await flush())) { ready = false; throw new Error("First-time Database setup did not complete — try again"); }
     }
     if (!dm.has("_initialized"))
       await api("app_state?on_conflict=key", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=minimal" }, body: [{ key: "_initialized", value: { at: new Date().toISOString() } }] }).catch(() => { });

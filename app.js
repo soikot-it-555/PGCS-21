@@ -1,5 +1,5 @@
 // ---------- Config ----------
-const DEFAULT_MEMBER_PASS = "pgcs1234";               // সদস্যদের প্রাথমিক password
+const DEFAULT_MEMBER_PASS = "pgcs1234";               // Members' default password
 const ACCESS_ROLES = {
   adminIT: "Admin (IT)",
   admin: "Admin",
@@ -97,12 +97,12 @@ const canAccessPage = page => ({
   admin: ["dashboard", "entry", "approvals", "reports", "member-detail", "financial"],
   member: ["dashboard", "entry", "reports", "member-detail", "financial"]
 }[currentRole()] || []).includes(page);
-const fmt = n => "৳ " + Number(n).toLocaleString("en-IN");
+const fmt = n => "Tk " + Number(n).toLocaleString("en-IN");
 const member = mid => MEMBERS.find(m => m.mid === mid);
 const showToast = msg => { $("toast").textContent = msg; $("toast").classList.remove("hidden"); clearTimeout(showToast.t); showToast.t = setTimeout(() => $("toast").classList.add("hidden"), msg.startsWith("⚠️") ? 8000 : 3000); };
 // A save is only reported as successful after the Database confirmed it (never show success for a failed write)
 const toast = msg => {
-  if (window.DB && DB.pending()) DB.flush().then(ok => showToast(ok ? msg : "⚠️ Database-এ সেভ হয়নি — পুনরায় চেষ্টা চলছে। (" + msg + ")"));
+  if (window.DB && DB.pending()) DB.flush().then(ok => showToast(ok ? msg : "⚠️ Not saved to Database — retrying. (" + msg + ")"));
   else showToast(msg);
 };
 
@@ -110,7 +110,7 @@ const toast = msg => {
 // Login user selector: every Active member as "Name — MID" (members choose their name instead of typing the MID)
 function renderLoginMembers() {
   const sel = $("login-user"), keep = sel.value, h = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));   // (esc() lives in finance.js, loaded later)
-  sel.innerHTML = `<option value="">— সদস্য নির্বাচন করুন (Name — MID) —</option>` + MEMBERS.filter(m => m.status === "Active").map(m => `<option value="${h(m.mid)}">${h(m.name)} — ${h(m.mid)}</option>`).join("");
+  sel.innerHTML = `<option value="">— Select Member (Name — MID) —</option>` + MEMBERS.filter(m => m.status === "Active").map(m => `<option value="${h(m.mid)}">${h(m.name)} — ${h(m.mid)}</option>`).join("");
   if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
 }
 renderLoginMembers();
@@ -119,7 +119,7 @@ $("loginForm").addEventListener("submit", e => {
   const u = $("login-user").value.trim(), p = $("login-pass").value;
   const m = MEMBERS.find(x => x.mid.toLowerCase() === u.toLowerCase());
   if (!m || m.loginOff || p !== (pw[m.mid] || DEFAULT_MEMBER_PASS)) {
-    $("login-err").textContent = m?.loginOff ? "এই account বন্ধ আছে — Admin (IT)-এর সাথে যোগাযোগ করুন" : "ভুল username/MID বা password";
+    $("login-err").textContent = m?.loginOff ? "This account is disabled — contact Admin (IT)" : "Wrong username/MID or password";
     $("login-err").classList.remove("hidden");
     return;
   }
@@ -129,21 +129,21 @@ $("loginForm").addEventListener("submit", e => {
 });
 function logout() { sessionStorage.removeItem("pgcs_session"); location.reload(); }
 function changePassword() {
-  const np = prompt("নতুন password দিন (কমপক্ষে 6 অক্ষর):");
-  if (!np || np.length < 6) return np === null ? 0 : toast("Password খুব ছোট");
+  const np = prompt("Enter new password (at least 6 characters):");
+  if (!np || np.length < 6) return np === null ? 0 : toast("Password too short");
   pw[session.mid] = np;
-  localStorage.setItem(PWKEY, JSON.stringify(pw)); toast("Password পরিবর্তন হয়েছে");
+  localStorage.setItem(PWKEY, JSON.stringify(pw)); toast("Password changed");
 }
 function resetData() {
-  if (!isAdmin() || !confirm("সব data Excel-এর মূল অবস্থায় ফিরবে। নিশ্চিত?")) return;
-  if (prompt("এটি অনলাইন Database-এর সব Payment মুছে Excel-এর মূল data বসাবে — সবার জন্য। চালিয়ে যেতে RESET লিখুন:") !== "RESET") return toast("Reset বাতিল");
-  payments = INITIAL_PAYMENTS.map(p => ({ ...p })); save(); refreshAll(); toast("Reset সম্পন্ন");
+  if (!isAdmin() || !confirm("All data will revert to the original Excel state. Are you sure?")) return;
+  if (prompt("This will delete all Payments in the online Database and restore the original Excel data — for everyone. Type RESET to continue:") !== "RESET") return toast("Reset cancelled");
+  payments = INITIAL_PAYMENTS.map(p => ({ ...p })); save(); refreshAll(); toast("Reset completed");
 }
 
 // ---------- Database Backup / Restore (Admin IT only) ----------
 const BACKUP_KEYS = [MKEY, SKEY, KEY, PWKEY, IYKEY, PAKEY];
 function downloadDatabaseBackup() {
-  if (!isAdmin()) return toast("শুধু Admin (IT) Backup নিতে পারবেন");
+  if (!isAdmin()) return toast("Only Admin (IT) can take a Backup");
   const data = {};
   BACKUP_KEYS.forEach(key => { data[key] = localStorage.getItem(key); });
   const backup = {
@@ -159,32 +159,32 @@ function downloadDatabaseBackup() {
   a.download = `PGCS-21_Database_Backup_${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast("Database Backup Download হয়েছে");
+  toast("Database Backup downloaded");
 }
 async function restoreDatabaseBackup(file) {
-  if (!isAdmin()) return toast("শুধু Admin (IT) Restore করতে পারবেন");
+  if (!isAdmin()) return toast("Only Admin (IT) can Restore");
   if (!file) return;
   try {
     const backup = JSON.parse(await file.text());
     if (backup?.app !== "PGCS-21" || backup?.backupVersion !== 1 || !backup.data || typeof backup.data !== "object") {
-      throw new Error("এটি PGCS-21-এর সঠিক Backup file নয়");
+      throw new Error("This is not a valid PGCS-21 Backup file");
     }
     const parsed = {};
     for (const key of BACKUP_KEYS) {
-      if (!(key in backup.data) || typeof backup.data[key] !== "string") throw new Error("Backup file-এ প্রয়োজনীয় data নেই: " + key);
+      if (!(key in backup.data) || typeof backup.data[key] !== "string") throw new Error("Required data is missing in the Backup file: " + key);
       parsed[key] = JSON.parse(backup.data[key]);
     }
     if (!Array.isArray(parsed[MKEY]) || !parsed[SKEY] || typeof parsed[SKEY] !== "object" || Array.isArray(parsed[SKEY]) ||
         !Array.isArray(parsed[KEY]) || !parsed[PWKEY] || typeof parsed[PWKEY] !== "object" || Array.isArray(parsed[PWKEY]) || !Array.isArray(parsed[IYKEY]) || !Array.isArray(parsed[PAKEY])) {
-      throw new Error("Backup file-এর data format সঠিক নয়");
+      throw new Error("The Backup file's data format is incorrect");
     }
-    if (!confirm("বর্তমান Database-এর সব data Backup file-এর data দিয়ে প্রতিস্থাপিত হবে। Restore করার আগে বর্তমান data-এর Backup নিয়ে রাখুন। আপনি কি নিশ্চিত?")) return;
+    if (!confirm("All current Database data will be replaced with the Backup file's data. Take a Backup of the current data before restoring. Are you sure?")) return;
     BACKUP_KEYS.forEach(key => localStorage.setItem(key, backup.data[key]));
-    if (!(await DB.flush())) throw new Error("অনলাইন Database-এ Restore সেভ হয়নি — ইন্টারনেট চেক করে আবার চেষ্টা করুন");
-    alert("Database Restore সম্পন্ন হয়েছে। App পুনরায় চালু হবে।");
+    if (!(await DB.flush())) throw new Error("Restore was not saved to the online Database — check your internet and try again");
+    alert("Database Restore completed. The App will restart.");
     location.reload();
   } catch (err) {
-    alert("Restore করা যায়নি: " + (err?.message || "অজানা সমস্যা"));
+    alert("Restore failed: " + (err?.message || "Unknown problem"));
   }
 }
 
@@ -216,7 +216,7 @@ function renderStats() {
   const dr = payments.filter(p => p.fy === fy() && p.status === "Draft");
   let overdue = receivableRows(todayISO()).reduce((s, r) => s + r.due, 0), currentMonth = 0;
 
-  // শুধু admin-এ unchecked নয় এমন installments দেখাবো
+  // Only show installments that are not unchecked in admin
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
   MEMBERS.forEach(m => {
@@ -229,11 +229,11 @@ function renderStats() {
   });
 
   const card = (t, v, c) => `<div class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">${t}</p><h3 class="text-xl font-bold mt-1 ${c}">${v}</h3></div>`;
-  $("stats").innerHTML = card("মোট জমা (Approved)", fmt(ap.reduce((s, p) => s + p.amount, 0)), "text-emerald-600")
-    + card("মোট বকেয়া (Due)", fmt(overdue), "text-rose-600")
-    + card("চলতি মাসে পরিশোধযোগ্য", fmt(currentMonth), "text-amber-600")
-    + card("Draft (অপেক্ষমাণ)", `${dr.length} টি / ${fmt(dr.reduce((s, p) => s + p.amount, 0))}`, "text-amber-600")
-    + card("সক্রিয় সদস্য", `${MEMBERS.filter(m => m.status === "Active").length} / ${MEMBERS.length}`, "text-slate-800");
+  $("stats").innerHTML = card("Total Paid (Approved)", fmt(ap.reduce((s, p) => s + p.amount, 0)), "text-emerald-600")
+    + card("Total Due", fmt(overdue), "text-rose-600")
+    + card("Payable This Month", fmt(currentMonth), "text-amber-600")
+    + card("Draft (Pending)", `${dr.length} / ${fmt(dr.reduce((s, p) => s + p.amount, 0))}`, "text-amber-600")
+    + card("Active Members", `${MEMBERS.filter(m => m.status === "Active").length} / ${MEMBERS.length}`, "text-slate-800");
 
   const totals = visibleInsts.map(i => payments.filter(p => p.fy === fy() && (p.inst === i.key || p.instId === i.id) && paymentCounts(p)).reduce((s, p) => s + Number(p.amount || 0), 0));
   if (chart) chart.destroy();
@@ -242,13 +242,13 @@ function renderStats() {
 
 function renderMembers() {
   const q = $("search-member").value.toLowerCase();
-  const showCancelled = $("filter-status").value === "CANCELLED";   // Cancelled সদস্য শুধু এই filter-এ দেখাবে
+  const showCancelled = $("filter-status").value === "CANCELLED";   // Cancelled members are shown only under this filter
   const list = MEMBERS.filter(m => (showCancelled ? m.status !== "Active" : m.status === "Active") && (m.name.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q)));
 
-  // শুধু admin-এ unchecked নয় এমন installments দেখাবো
+  // Only show installments that are not unchecked in admin
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
-  let head = `<thead><tr><th>MID</th><th>Name</th><th>Total Paid</th><th>Current Month Due</th><th>Total Due</th><th title="সব Income Year মিলিয়ে — Financial Statement-এর Receivable-এর সমান">Receivable (All Years)</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
+  let head = `<thead><tr><th>MID</th><th>Name</th><th>Total Paid</th><th>Current Month Due</th><th>Total Due</th><th title="Across all Income Years — equals Financial Statement Receivable">Receivable (All Years)</th>${visibleInsts.map(i => `<th>${i.key}</th>`).join("")}<th></th></tr></thead>`;
   const f = $("filter-status").value;
   const allRecv = new Map(receivableRows(todayISO()).map(r => [r.m.mid, r.due]));
   const body = list.map(m => {
@@ -261,15 +261,15 @@ function renderMembers() {
       <td class="font-bold ${allRecv.get(m.mid) ? "text-rose-600" : "text-emerald-600"}">${fmt(allRecv.get(m.mid) || 0)}</td>${cells}
       <td><button onclick="viewIndividual('${m.mid}')" class="text-blue-600 underline">Details</button></td></tr>`;
   }).join("");
-  $("matrix").innerHTML = head + `<tbody>${body || '<tr><td colspan="10" class="p-4">কোনো সদস্য পাওয়া যায়নি</td></tr>'}</tbody>`;
+  $("matrix").innerHTML = head + `<tbody>${body || '<tr><td colspan="10" class="p-4">No members found</td></tr>'}</tbody>`;
 }
 
 function viewIndividual(mid) {
   const m = member(mid), rows = payments.filter(p => p.fy === fy() && p.mid === mid).sort((a, b) => a.date.localeCompare(b.date));
   const total = rows.filter(paymentCounts).reduce((s, p) => s + Number(p.amount || 0), 0);
-  $("modal-title").textContent = `${m.name} (${mid}) — জমা: ${fmt(total)}`;
-  $("modal-body").innerHTML = `<table class="w-full text-sm"><tr class="bg-slate-100 text-left"><th class="p-2">কিস্তি</th><th>Method</th><th>Date</th><th>Amount</th><th>Status</th><th>Comment</th></tr>` +
-    (rows.map(p => `<tr class="border-b"><td class="p-2">${p.inst}</td><td>${p.method}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${statusChip(p.status)}</td><td>${p.comment || "-"}</td></tr>`).join("") || `<tr><td colspan="6" class="p-3 text-center">কোনো payment নেই</td></tr>`) + "</table>";
+  $("modal-title").textContent = `${m.name} (${mid}) — Paid: ${fmt(total)}`;
+  $("modal-body").innerHTML = `<table class="w-full text-sm"><tr class="bg-slate-100 text-left"><th class="p-2">Installment</th><th>Method</th><th>Date</th><th>Amount</th><th>Status</th><th>Comment</th></tr>` +
+    (rows.map(p => `<tr class="border-b"><td class="p-2">${p.inst}</td><td>${p.method}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${statusChip(p.status)}</td><td>${p.comment || "-"}</td></tr>`).join("") || `<tr><td colspan="6" class="p-3 text-center">No payments</td></tr>`) + "</table>";
   $("modal-pdf").onclick = () => exportIndividualPDF(mid);
   $("individual-modal").classList.remove("hidden");
 }
@@ -493,7 +493,7 @@ function savePersonalInfo() {
 function normMobile(v) { let s = String(v).replace(/[\s-]/g, ""); if (s.startsWith("+88")) s = s.slice(3); else if (s.startsWith("88") && s.length === 13) s = s.slice(2); return s; }
 function saveMobile() {
   const raw = $("pi-mobile-quick").value.trim(), v = raw ? normMobile(raw) : "";
-  if (v && !/^01\d{9}$/.test(v)) return toast("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)");
+  if (v && !/^01\d{9}$/.test(v)) return toast("Enter a valid mobile number (01XXXXXXXXX)");
   updMember(session.mid, "mobile", v); renderMemberDetail(); toast("Mobile number updated");
 }
 
@@ -516,8 +516,8 @@ function renderMemberDirectory() {
       <td class="p-3 text-slate-600">${m.role}</td>
       <td class="p-3"><span class="chip ${m.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}">${m.status}</span></td>
     </tr>`).join("");
-  if (q && list.length === 0) $("member-directory-body").innerHTML = '<tr><td colspan="11" class="p-4 text-center text-slate-500">কোনো সদস্য পাওয়া যায়নি</td></tr>';
-  $("member-count").textContent = list.length + " সদস্য";
+  if (q && list.length === 0) $("member-directory-body").innerHTML = '<tr><td colspan="11" class="p-4 text-center text-slate-500">No members found</td></tr>';
+  $("member-count").textContent = list.length + " members";
 }
 
 function directoryRows() {
@@ -525,7 +525,7 @@ function directoryRows() {
 }
 const DIR_HEAD = ["SL", "MID", "Name", "Nominee", "Relationship", "Nominee NID", "Present Address", "Permanent Address", "Mobile", "Account No", "Role", "Status"];
 function downloadMembersDirectoryPDF() {
-  if (!isApprover()) return toast("শুধু Admin / Admin (IT) download করতে পারবেন");
+  if (!isApprover()) return toast("Only Admin / Admin (IT) can download");
   const { jsPDF } = window.jspdf, doc = new jsPDF({ orientation: "landscape" });
   const y = pdfHead(doc, "PGCS-21 — Members' Directory (" + new Date().toLocaleDateString("en-GB") + ")");
   safeTable(doc, { ...tblStyle, startY: y, styles: { ...tblStyle.styles, fontSize: 7, cellPadding: 1.5 }, head: [DIR_HEAD], body: directoryRows(),
@@ -534,7 +534,7 @@ function downloadMembersDirectoryPDF() {
   toast("Members' Directory PDF downloaded");
 }
 function exportMemberListExcel() {
-  if (!isApprover()) return toast("শুধু Admin / Admin (IT) download করতে পারবেন");
+  if (!isApprover()) return toast("Only Admin / Admin (IT) can download");
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([DIR_HEAD, ...directoryRows()]), "Members Directory");
   XLSX.writeFile(wb, "PGCS-21_Members_Directory.xlsx");
@@ -555,7 +555,7 @@ function renderInstallmentCheckboxes() {
   if (!container) return;
 
   const mid = isAdmin() ? $("entry-member").value : session.mid;
-  // শুধু Entry Form-এ চেক করা (unclosed) কিস্তিগুলো দেখাবো
+  // Only show installments checked (unclosed) in the Entry Form
   const availableInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
 
   container.innerHTML = availableInsts.map(i => {
@@ -570,7 +570,7 @@ function renderInstallmentCheckboxes() {
         data-amount="${i.amount}"
         ${isPaid ? 'checked disabled' : ''}
         onchange="syncAmount()">
-      <span>${i.key} (৳${i.amount})${isPaid ? ' ✓' : hasDraft ? ' ⏳' : ''}</span>
+      <span>${i.key} (Tk ${i.amount})${isPaid ? ' ✓' : hasDraft ? ' ⏳' : ''}</span>
     </label>`;
   }).join("");
 }
@@ -599,7 +599,7 @@ function fillAccount() {
     if (m.accountNo && !accountNumbers().includes(m.accountNo)) renderAccountOptions(m.accountNo);
     $("entry-account").value = m.accountNo || "";
   }
-  // Member পরিবর্তন হলে installment checkboxes আবার render করতে হবে
+  // Re-render installment checkboxes when the member changes
   renderInstallmentCheckboxes();
   syncAmount();
 }
@@ -609,16 +609,16 @@ function handleAccountChange() {
     lastSelectedAccount = select.value;
     return;
   }
-  const account = prompt("নতুন Account No দিন:");
+  const account = prompt("Enter new Account No:");
   if (account === null) return renderAccountOptions(lastSelectedAccount);
   const value = account.trim();
   if (!/^\d+$/.test(value)) {
     renderAccountOptions(lastSelectedAccount);
-    return toast("সঠিক Account No দিন (শুধু সংখ্যা)");
+    return toast("Enter a valid Account No (numbers only)");
   }
   if (accountNumbers().includes(value)) {
     renderAccountOptions(value);
-    return toast("এই Account No আগে থেকেই আছে");
+    return toast("This Account No already exists");
   }
   S.accounts.push(value);
   saveS();
@@ -638,10 +638,10 @@ function getSelectedInstallments() {
 }
 $("paymentForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!canAccessPage("entry") || (!isAdmin() && $("entry-member").value !== session.mid)) return toast("আপনার Entry করার অনুমতি নেই");
+  if (!canAccessPage("entry") || (!isAdmin() && $("entry-member").value !== session.mid)) return toast("You do not have permission to make an Entry");
 
   const selectedInstallments = getSelectedInstallments();
-  if (selectedInstallments.length === 0) return toast("অন্তত একটি কিস্তি Select করুন");
+  if (selectedInstallments.length === 0) return toast("Select at least one installment");
 
   const mid = isAdmin() ? $("entry-member").value : session.mid;
   const method = $("entry-method").value;
@@ -652,7 +652,7 @@ $("paymentForm").addEventListener("submit", e => {
   const comment = $("entry-comment").value;
   const submittedBy = isAdmin() ? "admin" : session.mid;
 
-  // প্রতিটি selected installment এর জন্য আলাদা payment entry তৈরি করা
+  // Create a separate payment entry for each selected installment
   const timestamp = Date.now();
   selectedInstallments.forEach((instKey, index) => {
     const inst = insts().find(i => i.key === instKey);
@@ -669,7 +669,7 @@ $("paymentForm").addEventListener("submit", e => {
       amount: inst.amount,
       account,
       bank,
-      comment: comment + (selectedInstallments.length > 1 ? ` (${selectedInstallments.join(", ")} একসাথে)` : ""),
+      comment: comment + (selectedInstallments.length > 1 ? ` (${selectedInstallments.join(", ")} together)` : ""),
       status: "Draft",
       submittedBy
     });
@@ -680,7 +680,7 @@ $("paymentForm").addEventListener("submit", e => {
   renderEntryOptions();
   fillAccount();
   refreshAll();
-  toast(`${selectedInstallments.length} টি কিস্তির জন্য Draft হিসেবে জমা হয়েছে — Admin approve করলে Final হবে`);
+  toast(`${selectedInstallments.length} installment(s) submitted as Draft — it will be Final once Admin approves`);
 });
 
 // ---------- Approvals ----------
@@ -689,31 +689,31 @@ function renderApprovals() {
   const adminIT = isAdmin();
   $("approvals-title").textContent = adminIT ? "Pending Approvals" : "Draft Approval";
   const rows = payments.filter(p => p.status === "Draft");
-  $("approvals-table").innerHTML = `<tr class="bg-slate-100"><th class="p-3">FY</th><th>সদস্য</th><th>কিস্তি</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr>` +
+  $("approvals-table").innerHTML = `<tr class="bg-slate-100"><th class="p-3">FY</th><th>Member</th><th>Installment</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr>` +
     (rows.map(p => `<tr class="border-b"><td class="p-3">${p.fy}</td><td>${member(p.mid)?.name || p.mid}</td><td>${p.inst}</td><td>${p.date}</td><td>${fmt(p.amount)}</td><td>${p.method}</td><td>${statusChip(p.status)}</td>
-      <td class="space-x-2"><button onclick="setStatus(${p.id},'Approved')" class="text-emerald-700 font-semibold">Approve</button><button onclick="setStatus(${p.id},'Rejected')" class="text-amber-700">Reject</button>${adminIT ? `<button onclick="voidPayment(${p.id})" class="text-rose-600">Delete</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="p-4 text-center text-slate-500">কিছু নেই</td></tr>`);
+      <td class="space-x-2"><button onclick="setStatus(${p.id},'Approved')" class="text-emerald-700 font-semibold">Approve</button><button onclick="setStatus(${p.id},'Rejected')" class="text-amber-700">Reject</button>${adminIT ? `<button onclick="voidPayment(${p.id})" class="text-rose-600">Delete</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="p-4 text-center text-slate-500">Nothing here</td></tr>`);
   const n = payments.filter(p => p.status === "Draft").length;
   $("nav-approvals-label").textContent = `Approvals (${n})`;
 }
 function setStatus(id, s) {
   if (!isApprover() || !["Approved", "Rejected"].includes(s)) return;
   const payment = payments.find(p => p.id === id && p.status === "Draft");
-  if (!payment) return toast("শুধু Draft অনুমোদন বা Cancel করা যাবে");
+  if (!payment) return toast("Only Draft payments can be approved or cancelled");
   payment.status = s; save(); refreshAll(); toast(s);
 }
 function voidPayment(id) {
-  if (!isAdmin()) return toast("শুধু Admin (IT) Approved Payment void করতে পারবেন");
+  if (!isAdmin()) return toast("Only Admin (IT) can void an Approved Payment");
   const p = payments.find(x => String(x.id) === String(id));
-  if (!p || ["Voided", "Deleted"].includes(p.status)) return toast("Payment পাওয়া যায়নি বা আগে void করা হয়েছে");
-  if (p.status !== "Approved") return toast("শুধু Approved Payment Void করা যায় (Draft হলে Cancel/Reject করুন)");
+  if (!p || ["Voided", "Deleted"].includes(p.status)) return toast("Payment not found or already voided");
+  if (p.status !== "Approved") return toast("Only Approved payments can be voided (for Draft, Cancel/Reject instead)");
   const detail = `Payment ID: ${p.id}\nMID: ${p.mid}\nInstallment: ${p.inst}\nAmount: ${fmt(p.amount)}\nStatus: ${p.status}`;
-  if (!confirm(detail + "\n\nএই Payment-টি Voided করা হবে। এগিয়ে যাবেন?")) return;
-  const reason = prompt("Deletion reason / বাতিলের কারণ লিখুন:");
-  if (!reason || !reason.trim()) return toast("Deletion reason আবশ্যক");
+  if (!confirm(detail + "\n\nThis payment will be Voided. Continue?")) return;
+  const reason = prompt("Enter the deletion reason:");
+  if (!reason || !reason.trim()) return toast("Deletion reason is required");
   const previousStatus = p.status;
   p.previousStatus = previousStatus; p.status = "Voided"; p.voidedAt = new Date().toISOString(); p.voidedBy = session.mid; p.voidReason = reason.trim();
   paymentAudit.push({ id: `pa-${p.id}-${Date.now()}`, paymentId: p.id, deletedBy: session.mid, deletionDate: p.voidedAt, reason: p.voidReason, previousStatus, mid: p.mid, installment: p.inst, amount: p.amount });
-  savePaymentAudit(); save(); refreshAll(); toast("Payment Voided হয়েছে — financial effect reverse হয়েছে");
+  savePaymentAudit(); save(); refreshAll(); toast("Payment Voided — financial effect reversed");
 }
 const delPayment = (...args) => voidPayment(...args);   // late-bound: admin-ext.js provides the dialog version
 
@@ -747,7 +747,7 @@ function pdfHead(doc, title) {
 }
 const tblStyle = { theme: "grid", styles: { fontSize: 8.5, halign: "center", valign: "middle", lineColor: [0, 0, 0], lineWidth: 0.2, textColor: 0 },
   headStyles: { fillColor: [22, 96, 130], textColor: 255 }, bodyStyles: { fillColor: [255, 255, 255] }, alternateRowStyles: { fillColor: [190, 230, 247] } };
-// টেবিল ২য় পাতায় গেলে অন্তত MIN_ROWS টি row একসাথে নতুন পাতায় যাবে (একা ১-২ row বা একা সই-ঘর পড়ে থাকবে না)
+// If the table flows to a 2nd page, at least MIN_ROWS rows move together to the new page (no lone 1-2 rows or a lone signature block)
 const MIN_ROWS = 4;
 function safeTable(doc, opts) {
   const body = opts.body || [], W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
@@ -755,7 +755,7 @@ function safeTable(doc, opts) {
   const dry = new jsPDF({ orientation: portrait ? "portrait" : "landscape" }), pageOf = [];
   dry.autoTable({ ...opts, didDrawCell: d => { if (d.section === "body") pageOf[d.row.index] = dry.internal.getCurrentPageInfo().pageNumber; } });
   const pages = dry.internal.getNumberOfPages(), last = pageOf.filter(p => p === pages).length;
-  const signNoFit = portrait && dry.lastAutoTable.finalY + 62 > H - 7;   // সই-ঘর (signBlock) জায়গা না পেলে
+  const signNoFit = portrait && dry.lastAutoTable.finalY + 62 > H - 7;   // if the signature block does not fit
   const needCut = body.length > MIN_ROWS && ((pages > 1 && last < MIN_ROWS) || signNoFit);
   if (!needCut) return doc.autoTable(opts);
   const cut = body.length - MIN_ROWS;
@@ -807,7 +807,7 @@ function exportMonthlyPDF() {
 function exportDashboardTablePDF() {
   const doc = new jsPDF(), y = pdfHead(doc, `Member Payment Status - ${fy()} Financial Year`);
 
-  // Filter করা members (search এবং status filter অনুযায়ী)
+  // Filter members (by search and status filter)
   const q = $("search-member").value.toLowerCase();
   const filterStatus = $("filter-status").value;
   const visibleInsts = insts().filter(i => !S.closed.includes(fy() + "|" + i.key));
@@ -844,13 +844,13 @@ function exportDashboardTablePDF() {
       totalPaid += c.paid;
       totalDue += c.due;
 
-      // Due থাকলে comment-এ যোগ করা
+      // Add to comment if Due
       if (c.due > 0) {
         dueDetails.push(`${instLabel(i)}: ${c.due}/-`);
       }
     });
 
-    // Comment text তৈরি করা
+    // Build comment text
     let comment = "";
     if (dueDetails.length > 0) {
       comment = dueDetails.join(", ") + " Payment Due";
@@ -911,14 +911,99 @@ const { jsPDF } = window.jspdf;
 
 // ---------- Navigation ----------
 function adminNavigate(target, button) {
-  if (!isAdmin()) return toast("শুধু Admin (IT) এই section দেখতে পারবেন");
+  if (!isAdmin()) return toast("Only Admin (IT) can view this section");
   document.querySelectorAll("#admin-subnav .admin-subnav-btn").forEach(b => b.classList.toggle("active", b === button));
   document.querySelectorAll("#page-admin .admin-section").forEach(section => section.classList.toggle("hidden", section.id !== target));
   $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
   if (target === "admin-finance-section" && typeof renderFinConfig === "function") renderFinConfig();
 }
+function toggleMenu() {
+  const open = document.querySelector(".sidebar").classList.toggle("open");
+  $("sidebar-backdrop").classList.toggle("show", open);
+  $("menu-toggle").setAttribute("aria-expanded", String(open));
+}
+function closeMenu() {
+  document.querySelector(".sidebar").classList.remove("open");
+  $("sidebar-backdrop").classList.remove("show");
+  $("menu-toggle").setAttribute("aria-expanded", "false");
+}
+window.addEventListener("resize", () => { if (window.innerWidth >= 768) closeMenu(); });
+window.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
+
+// Mobile drawer gestures: drag left to close, swipe right from the left edge to open
+function bindDrawerGestures() {
+  const sb = document.querySelector(".sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  const toggle = document.getElementById("menu-toggle");
+  if (!sb || !backdrop || !toggle) return;
+  const isMobile = () => window.matchMedia("(max-width: 767px)").matches;
+
+  const setOpen = open => {
+    sb.classList.toggle("open", open);
+    backdrop.classList.toggle("show", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+
+  let startX = 0, startY = 0, startLeft = 0, axis = null, w = 0, active = false, pendingCleanup = null;
+
+  sb.addEventListener("touchstart", e => {
+    if (!isMobile()) return;
+    if (pendingCleanup) { clearTimeout(pendingCleanup); pendingCleanup = null; }
+    active = true; axis = null;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    w = sb.getBoundingClientRect().width;
+    startLeft = sb.classList.contains("open") ? 0 : -w;
+    sb.style.transition = "none";
+  }, { passive: true });
+
+  sb.addEventListener("touchmove", e => {
+    if (!active) return;
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    if (axis === null) {
+      const dx = x - startX, dy = y - startY;
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+    }
+    if (axis !== "x") return;
+    const left = Math.max(-w, Math.min(0, startLeft + (x - startX)));
+    sb.style.transform = `translateX(${left}px)`;
+  }, { passive: true });
+
+  const endDrag = () => {
+    if (!active) return;
+    active = false;
+    const m = /translateX\((-?[\d.]+)px\)/.exec(sb.style.transform || "");
+    const left = m ? parseFloat(m[1]) : (sb.classList.contains("open") ? 0 : -w);
+    setOpen(left > -w * 0.4);
+    sb.style.transition = "transform .32s cubic-bezier(.32, .72, .22, 1)";
+    sb.style.transform = sb.classList.contains("open") ? "translateX(0)" : "translateX(-104%)";
+    const cleanup = () => { sb.style.transition = ""; sb.style.transform = ""; sb.removeEventListener("transitionend", cleanup); if (pendingCleanup) { pendingCleanup = null; } };
+    sb.addEventListener("transitionend", cleanup);
+    pendingCleanup = setTimeout(cleanup, 420);
+  };
+  sb.addEventListener("touchend", endDrag);
+  sb.addEventListener("touchcancel", endDrag);
+
+  let ex = 0, ey = 0, edgeOn = false;
+  document.addEventListener("touchstart", e => {
+    if (!isMobile() || sb.classList.contains("open")) return;
+    const t = e.touches[0];
+    if (t.clientX <= 28) { edgeOn = true; ex = t.clientX; ey = t.clientY; }
+  }, { passive: true });
+  document.addEventListener("touchmove", e => {
+    if (!edgeOn || sb.classList.contains("open")) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientY - ey) > Math.abs(t.clientX - ex)) { edgeOn = false; return; }
+    if (t.clientX - ex > 44) { edgeOn = false; setOpen(true); }
+  }, { passive: true });
+  document.addEventListener("touchend", () => { edgeOn = false; }, { passive: true });
+}
+bindDrawerGestures();
+
 function showPage(id) {
   if (!canAccessPage(id)) return toast("No permission to view this page");
+  closeMenu();
   document.querySelectorAll(".page-section").forEach(s => s.classList.add("hidden"));
   $("page-" + id).classList.remove("hidden");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
@@ -945,7 +1030,7 @@ function renderAdmin() {
   if (typeof renderEntrySettings === "function") renderEntrySettings();
   $("admin-backup").innerHTML = `<div class="flex flex-wrap gap-2"><button type="button" class="bg-emerald-600 text-white rounded-lg px-3 py-2" onclick="downloadDatabaseBackup()">⬇ Download Database Backup</button>
     <label class="bg-blue-600 text-white rounded-lg px-3 py-2 cursor-pointer">⬆ Restore Database Backup<input type="file" accept=".json,application/json" class="hidden" onchange="restoreDatabaseBackup(this.files[0]);this.value=''"></label></div>
-    <p class="text-xs text-slate-600 mt-2">Backup file-এ সদস্য, Payment, Settings এবং Password data থাকবে। নিরাপদ স্থানে রাখুন। Restore করলে বর্তমান data প্রতিস্থাপিত হবে।</p>`;
+    <p class="text-xs text-slate-600 mt-2">The backup file will contain Members, Payment, Settings and Password data. Keep it in a safe place. Restoring will replace the current data.</p>`;
   const ad = { mid: $("m-mid")?.value || "", name: $("m-name")?.value || "" };
   $("admin-add").innerHTML = `<div class="border rounded-xl p-3 bg-slate-50"><p class="font-semibold mb-2 text-sm">Add New Member</p>
     <div class="grid md:grid-cols-2 gap-3">
@@ -954,9 +1039,9 @@ function renderAdmin() {
       <div><label class="lbl">Membership Role</label><input class="inp" id="m-role" value="Member"></div>
       <div><label class="lbl">Role Name</label><select class="inp" id="m-roleName">${Object.entries(ACCESS_ROLES).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>
       <div><label class="lbl">Status</label><select class="inp" id="m-status"><option value="Active">Active</option><option value="Withdrawn">Withdrawn</option></select></div>
-      <div><label class="lbl">Password (6+ chars, ফাঁকা = default)</label><input class="inp" id="m-pw"></div>
+      <div><label class="lbl">Password (6+ chars, blank = default)</label><input class="inp" id="m-pw"></div>
       <div><label class="lbl">Mobile Number</label><input class="inp" id="m-mobile"></div>
-      <div><label class="lbl">Login</label><input type="checkbox" id="m-login" checked> চালু</div>
+      <div><label class="lbl">Login</label><input type="checkbox" id="m-login" checked> Enabled</div>
     </div><button onclick="addMember()" class="bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg mt-3">+ Add Member</button></div>`;
   const inp = (mid, f, v, w = "w-32") => `<input class="border rounded p-1 ${w}" value="${v || ""}" onchange="updMember('${mid}','${f}',this.value)">`;
   $("admin-users").innerHTML = `<tr class="bg-slate-100"><th class="p-2">MID (Username)</th><th>Name</th><th>Account No</th><th>Mobile</th><th>Membership Role</th><th>Role Name</th><th>Status</th><th>Password</th><th>Login</th><th></th></tr>` +
@@ -1040,23 +1125,23 @@ function renderIncomeYearManagement() {
 function createIncomeYear() {
   if (!isAdmin()) return;
   const name = $("iy-name").value.trim(), startDate = $("iy-start").value, endDate = $("iy-end").value, defaultAmount = Number($("iy-amount").value), dueDay = Number($("iy-day").value);
-  if (!/^\d{4}-\d{2}$/.test(name)) return toast("Income Year নাম এই ফরম্যাটে দিন: 2027-28");
-  if (!validISO(startDate) || !validISO(endDate) || endDate <= startDate) return toast("সঠিক Start Date ও End Date দিন (End Date পরে হতে হবে)");
-  if (!(defaultAmount > 0)) return toast("Monthly Amount ০-এর বেশি হতে হবে");
-  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return toast("Due Day ১ থেকে ৩১-এর মধ্যে হতে হবে");
-  if (incomeYears.some(y => y.name === name)) return toast(`"${name}" Income Year আগে থেকেই আছে`);
+  if (!/^\d{4}-\d{2}$/.test(name)) return toast("Enter the Income Year name in this format: 2027-28");
+  if (!validISO(startDate) || !validISO(endDate) || endDate <= startDate) return toast("Enter valid Start Date and End Date (End Date must be after Start Date)");
+  if (!(defaultAmount > 0)) return toast("Monthly Amount must be greater than 0");
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return toast("Due Day must be between 1 and 31");
+  if (incomeYears.some(y => y.name === name)) return toast(`Income Year "${name}" already exists`);
   const clash = incomeYears.find(y => y.status !== "Inactive" && startDate <= y.endDate && endDate >= y.startDate);
-  if (clash) return toast(`এই সময় "${clash.name}"-এর সাথে মিলে যাচ্ছে`);
+  if (clash) return toast(`This period overlaps with "${clash.name}"`);
   const installments = genIncomeYearInstallments(name, startDate, endDate, defaultAmount, dueDay);
   incomeYears.push({ id: `iy-${slugId(name)}-${Date.now()}`, name, startDate, endDate, defaultAmount, dueDay, status: "Active", installments });
   saveIncomeYears(); refreshYearsFromModel();
   const sel = $("fy-select"), keep = sel.value; sel.innerHTML = Object.keys(YEARS).reverse().map(y => `<option>${y}</option>`).join(""); sel.value = YEARS[keep] ? keep : sel.value;
   renderIncomeYearManagement(); refreshAll(); renderEntryOptions();
-  toast(`Income Year ${name} তৈরি হয়েছে — ${installments.length} টি কিস্তি স্বয়ংক্রিয়ভাবে যোগ হয়েছে`);
+  toast(`Income Year ${name} created — ${installments.length} installments added automatically`);
 }
 function editIncomeYear(id, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === id); if (!y) return; if (field === "name" && incomeYears.some(x => x.id !== id && x.name === value.trim())) return toast("Income Year already exists"); y[field] = ["defaultAmount", "dueDay"].includes(field) ? Number(value) : value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
 function editInstallment(yid, iid, field, value) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (field === "name" && !i.legacyKey) i.legacyKey = i.name;   /* old name kept so older payments stay linked */ i[field] = field === "amount" ? Number(value) : value; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); }
-function archiveInstallment(yid, iid) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (payments.some(p => p.fy === y.name && (p.instId === iid || p.inst === i.legacyKey || p.inst === i.name))) return toast("Payment associated — deactivate instead of deleting"); if (confirm("Installment archive করবেন?")) { i.status = "Inactive"; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); } }
+function archiveInstallment(yid, iid) { if (!isAdmin()) return; const y = incomeYears.find(x => x.id === yid), i = y?.installments.find(x => x.id === iid); if (!i) return; if (payments.some(p => p.fy === y.name && (p.instId === iid || p.inst === i.legacyKey || p.inst === i.name))) return toast("Payment associated — deactivate instead of deleting"); if (confirm("Archive this installment?")) { i.status = "Inactive"; saveIncomeYears(); refreshYearsFromModel(); renderIncomeYearManagement(); refreshAll(); } }
 function setS(k, v) { if (!isAdmin()) return; S[k] = v; saveS(); renderEntryOptions(); toast("Saved"); }
 function toggleInst(k, on) { if (!isAdmin()) return; S.closed = S.closed.filter(x => x !== k); if (!on) S.closed.push(k); saveS(); renderEntryOptions(); refreshAll(); }
 function setAmt(k, v) { if (!isAdmin()) return; S.amt[k] = Number(v); saveS(); applyAmounts(); refreshAll(); toast("Saved"); }
@@ -1066,15 +1151,15 @@ function addInstallment() {
   if (!key || !key.trim()) return;
   const trimmedKey = key.trim();
   if (insts().find(i => i.key === trimmedKey)) return toast("Installment name already exists");
-  const due = prompt("Due Date (YYYY-MM-DD ফরম্যাটে, যেমন: 2025-07-25):");
+  const due = prompt("Due Date (YYYY-MM-DD format, e.g. 2025-07-25):");
   if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return toast("Enter correct date (YYYY-MM-DD)");
-  const amount = prompt("Amount (টাকা):");
-  if (!amount || isNaN(amount) || Number(amount) <= 0) return toast("সঠিক টাকার পরিমাণ দিন");
+  const amount = prompt("Amount (Taka):");
+  if (!amount || isNaN(amount) || Number(amount) <= 0) return toast("Enter a valid amount");
   YEARS[fy()].push({ key: trimmedKey, due, amount: Number(amount) });
   S.amt[fy() + "|" + trimmedKey] = Number(amount);
   saveS();
   refreshAll();
-  toast("নতুন কিস্তি যোগ হয়েছে");
+  toast("New installment added");
 }
 function editInstName(oldKey, newKey) {
   if (!isAdmin() || !newKey || !newKey.trim()) return;
@@ -1104,14 +1189,14 @@ function editInstDue(key, newDue) {
   inst.due = newDue;
   saveS();
   refreshAll();
-  toast("Due Date আপডেট হয়েছে");
+  toast("Due Date updated");
 }
 function deleteInstallment(key) {
   if (!isAdmin()) return;
   if (payments.some(p => p.fy === fy() && p.inst === key)) {
-    return toast("এই কিস্তির Payment আছে — মুছে ফেলা যাবে না");
+    return toast("This installment has payments — it cannot be deleted");
   }
-  if (!confirm(`"${key}" কিস্তি মুছে ফেলবেন?`)) return;
+  if (!confirm(`Delete installment "${key}"?`)) return;
   const idx = insts().findIndex(i => i.key === key);
   if (idx !== -1) {
     insts().splice(idx, 1);
@@ -1120,26 +1205,26 @@ function deleteInstallment(key) {
     S.closed = S.closed.filter(x => x !== k);
     saveS();
     refreshAll();
-    toast("কিস্তি মুছে ফেলা হয়েছে");
+    toast("Installment deleted");
   }
 }
 function updMember(mid, f, v) {
   if (!["name", "accountNo", "role", "status", "loginOff", "mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress", "cancelDate"].includes(f)) return;
 if (!isAdmin() && !["mobile", "nominee", "nomineeRelation", "nomineeNID", "presentAddress", "permanentAddress"].includes(f)) return;
   const m = member(mid);
-  if (!m) return toast("সদস্য পাওয়া যায়নি");
+  if (!m) return toast("Member not found");
   if (f === "loginOff" && v && accessRole(m) === "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) {
     renderAdmin();
-    return toast("একমাত্র Admin (IT)-এর Login বন্ধ করা যাবে না");
+    return toast("The only Admin (IT) login cannot be disabled");
   }
-  if (f === "status") {                       // সদস্যপদ বাতিল / পুনরায় সক্রিয়
+  if (f === "status") {                       // Cancel / reactivate membership
     if (v === "Withdrawn" && m.status !== "Withdrawn") {
-      const dt = prompt("সদস্যপদ বাতিলের তারিখ (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
-      if (!dt || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) { renderAdmin(); return toast("বাতিল করা হয়নি — সঠিক তারিখ দিন"); }
-      if (!confirm(m.name + " (" + mid + ")-এর সদস্যপদ " + dt + " তারিখে বাতিল হবে। Dashboard ও Payment Entry থেকে সরে যাবে; ইতিহাস থাকবে। নিশ্চিত?")) { renderAdmin(); return; }
+      const dt = prompt("Membership cancellation date (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
+      if (!dt || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) { renderAdmin(); return toast("Not cancelled — enter a valid date"); }
+      if (!confirm(m.name + " (" + mid + ")'s membership will be cancelled on " + dt + ". They will be removed from Dashboard and Payment Entry; history will remain. Are you sure?")) { renderAdmin(); return; }
       m.cancelDate = dt;
     } else if (v === "Active" && typeof finSettleDate === "function" && finSettleDate(mid)) {
-      renderAdmin(); return toast("Final Settlement হয়ে গেছে — আর সক্রিয় করা যাবে না");
+      renderAdmin(); return toast("Final Settlement already done — cannot be reactivated");
     } else if (v === "Active") delete m.cancelDate;
   }
   if (f === "cancelDate" && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
@@ -1148,10 +1233,10 @@ if (!isAdmin() && !["mobile", "nominee", "nomineeRelation", "nomineeNID", "prese
 function setAccessRole(mid, role) {
   if (!isAdmin() || !Object.hasOwn(ACCESS_ROLES, role)) return;
   const m = member(mid);
-  if (!m) return toast("সদস্য পাওয়া যায়নি");
+  if (!m) return toast("Member not found");
   if (accessRole(m) === "adminIT" && role !== "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) {
     renderAdmin();
-    return toast("অন্তত একজন Admin (IT) থাকতে হবে");
+    return toast("There must be at least one Admin (IT)");
   }
   m.accessRole = role;
   saveMembers();
@@ -1166,9 +1251,9 @@ function setAccessRole(mid, role) {
 function editPw(mid, v) {
   if (!isAdmin()) return;
   v = v.trim();
-  if (v.length < 6) { renderAdmin(); return toast("Password কমপক্ষে ৬ অক্ষরের হতে হবে"); }
+  if (v.length < 6) { renderAdmin(); return toast("Password must be at least 6 characters"); }
   if (v === DEFAULT_MEMBER_PASS) delete pw[mid]; else pw[mid] = v;
-  localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast(mid + " — password আপডেট হয়েছে");
+  localStorage.setItem(PWKEY, JSON.stringify(pw)); renderAdmin(); toast(mid + " — password updated");
 }
 function doAddMember() {
   if (!isAdmin()) return;
@@ -1220,8 +1305,8 @@ function delMember(mid) {
   if (!isAdmin()) return;
   const m = member(mid);
   if (m && accessRole(m) === "adminIT" && MEMBERS.filter(x => accessRole(x) === "adminIT").length === 1) return toast("The only Admin (IT) cannot be deleted");
-  if (payments.some(p => p.mid === mid)) return toast("Payment থাকা সদস্য মোছা যাবে না — Status 'Withdrawn' করুন");
-  if (confirm(mid + " মুছবেন?")) { MEMBERS.splice(MEMBERS.findIndex(m => m.mid === mid), 1); saveMembers(); refreshAll(); }
+  if (payments.some(p => p.mid === mid)) return toast("A member with payments cannot be deleted — set Status to 'Withdrawn'");
+  if (confirm("Delete " + mid + "?")) { MEMBERS.splice(MEMBERS.findIndex(m => m.mid === mid), 1); saveMembers(); refreshAll(); }
 }
 function refreshAll() { renderStats(); renderMembers(); renderApprovals(); renderAdmin(); if (typeof renderFinance === "function" && !$("page-financial").classList.contains("hidden")) renderFinance(); }
 
@@ -1250,7 +1335,7 @@ function startApp() {
   $("entry-member").disabled = !isAdmin(); $("entry-member").onchange = fillAccount;
   $("entry-account").onchange = handleAccountChange;
   $("report-member-select").innerHTML = MEMBERS.map(m => `<option value="${m.mid}">${m.name} (${m.mid})</option>`).join("");
-  $("entry-note").textContent = isAdmin() ? "Admin (IT) হিসেবে যেকোনো সদস্যের entry দিতে পারবেন; approve না করা পর্যন্ত Draft থাকবে।" : "আপনি শুধু নিজের payment যোগ করতে পারবেন। Admin অনুমোদন করলে Final database-এ দেখাবে।";
+  $("entry-note").textContent = isAdmin() ? "As Admin (IT), you can enter for any member; it stays Draft until approved." : "You can only add your own payment. It will appear in the final database once Admin approves.";
   $("fy-select").onchange();
   fillAccount();
   showPage(isAdmin() ? "dashboard" : currentRole() === "admin" ? "approvals" : "entry");
@@ -1261,7 +1346,7 @@ function startApp() {
 function remoteRefresh(what) {
   if (!session) return;
   const me = member(session.mid);
-  if (!me || me.loginOff) { alert("আপনার account পরিবর্তন/বন্ধ হয়েছে। আবার login করুন।"); return logout(); }
+  if (!me || me.loginOff) { alert("Your account has been changed/disabled. Please log in again."); return logout(); }
   if (accessRole(me) !== session.role) return startApp();            // role changed by an admin
   const entryOpen = !$("page-entry").classList.contains("hidden");
   const checked = [...document.querySelectorAll(".installment-checkbox:checked:not(:disabled)")].map(x => x.value);
